@@ -719,45 +719,55 @@ CREATE TABLE IF NOT EXISTS batchMeasurements (
 -- -----------------------------------------------------------------------------
 -- Equipment Usage
 -- -----------------------------------------------------------------------------
--- Tracks which equipment is occupied by which batches.
+-- Tracks which equipment is occupied during which batch stages.
 -- Only applies to equipment where canBeOccupied = 1 (fermenters, monitors).
 -- Prevents scheduling conflicts - user can see what's available.
 --
--- Workflow:
---   1. User starts batch → assign equipment → status: "in-use"
---   2. Batch progresses → equipment remains "in-use"
---   3. User packages batch → release equipment → status: "available"
+-- Stage-Level Tracking:
+--   Equipment is tied to STAGES, not entire batches
+--   Example: Fermenter used during Fermentation stage, then freed for next batch
+--            Same fermenter might be reused in Aging stage of same batch
 --
--- inUseDate: When equipment assigned (auto-set if not provided)
--- releaseDate: When equipment freed (NULL while still in use)
+-- Workflow:
+--   1. User starts stage → assign equipment → status: "in-use"
+--   2. Stage progresses → equipment remains "in-use"
+--   3. User completes stage → release equipment → status: "available"
+--
+-- inUseDate: When equipment assigned to this stage (auto-set if not provided)
+-- releaseDate: When equipment freed from this stage (NULL while still in use)
 -- status: Current state
---   - "in-use": Currently assigned to a batch
+--   - "in-use": Currently assigned to this stage
 --   - "available": Freed and ready for reassignment
 --
 -- Example:
---   Batch: "Traditional Mead" started Oct 1
+--   Batch: "Traditional Mead"
+--   Stage: Fermentation (started Oct 1)
 --     Equipment: Primary Fermenter #1
 --     inUseDate: 2025-10-01 10:00:00
 --     releaseDate: NULL
 --     status: in-use
 --   
---   User packages batch on Oct 20
---     releaseDate: 2025-10-20 14:30:00
+--   User completes Fermentation stage on Oct 15
+--     releaseDate: 2025-10-15 14:30:00
 --     status: available
 --   
---   Now Primary Fermenter #1 can be assigned to new batch!
+--   Now Primary Fermenter #1 can be assigned to another batch's stage!
 --
--- ON DELETE CASCADE: If equipment or batch deleted, remove usage records
+-- Multiple Equipment Per Stage:
+--   One stage can have multiple equipment records
+--   Example: Fermentation stage uses both fermenter + TILT monitor
+--
+-- ON DELETE CASCADE: If equipment or batch stage deleted, remove usage records
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS equipmentUsage (
   usageID             INTEGER PRIMARY KEY AUTOINCREMENT,
   equipmentID         INTEGER NOT NULL,
-  batchID             INTEGER NOT NULL,
+  batchStageID        INTEGER NOT NULL,
   inUseDate           TEXT NOT NULL DEFAULT (DATETIME('now')),  -- When assigned
   releaseDate         TEXT,                                     -- NULL if still in use
   status              TEXT NOT NULL DEFAULT 'in-use',           -- "in-use", "available"
   FOREIGN KEY (equipmentID) REFERENCES equipment(equipmentID) ON DELETE CASCADE,
-  FOREIGN KEY (batchID) REFERENCES batches(batchID) ON DELETE CASCADE
+  FOREIGN KEY (batchStageID) REFERENCES batchStages(batchStageID) ON DELETE CASCADE
 );
 
 -- -----------------------------------------------------------------------------
