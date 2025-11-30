@@ -852,6 +852,46 @@ CREATE TABLE IF NOT EXISTS inventoryLots (
   CHECK ((productID IS NOT NULL AND supplyID IS NULL) OR (productID IS NULL AND supplyID IS NOT NULL))
 );
 
+-- -----------------------------------------------------------------------------
+-- User Settings
+-- -----------------------------------------------------------------------------
+-- Stores user preferences for units, formats, and display options.
+-- Single row table (settingsID always = 1) for simplicity.
+--
+-- Units:
+--   temperatureUnit: "c" (Celsius) or "f" (Fahrenheit)
+--   measurementSystem: "metric", "imperial", or "us"
+--   densityUnit: "sg", "brix", "plato", etc.
+--
+-- Formats:
+--   dateFormat: "iso" (YYYY-MM-DD), "us" (MM/DD/YYYY), "uk" (DD/MM/YYYY)
+--   timeFormat: "24h" or "12h"
+--
+-- Display:
+--   theme: "light", "dark", "auto"
+--   language: "en", "de", etc. (future use)
+--
+-- Defaults are set based on browser locale on first load
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS userSettings (
+  settingsID        INTEGER PRIMARY KEY DEFAULT 1,
+  temperatureUnit   TEXT NOT NULL DEFAULT 'c',
+  measurementSystem TEXT NOT NULL DEFAULT 'metric',
+  densityUnit       TEXT NOT NULL DEFAULT 'sg',
+  dateFormat        TEXT NOT NULL DEFAULT 'iso',
+  timeFormat        TEXT NOT NULL DEFAULT '24h',
+  theme             TEXT NOT NULL DEFAULT 'dark',
+  language          TEXT NOT NULL DEFAULT 'en',
+  CHECK (settingsID = 1),
+  CHECK (temperatureUnit IN ('c', 'f')),
+  CHECK (measurementSystem IN ('metric', 'imperial', 'us')),
+  CHECK (dateFormat IN ('iso', 'us', 'uk')),
+  CHECK (timeFormat IN ('24h', '12h')),
+  CHECK (theme IN ('light', 'dark', 'auto'))
+);
+
+-- Insert default settings
+INSERT OR IGNORE INTO userSettings (settingsID) VALUES (1);
 
 -- =============================================================================
 -- SEED DATA (Reference data that ships with every new database)

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Reset Database</title>
+    <script src="./node_modules/sql.js/dist/sql-wasm.js"></script>
+</head>
+<body>
+    <h1>Database Reset</h1>
+    <button id="resetBtn">Reset Database</button>
+    <button id="exportBtn" disabled>Export Database</button>
+    <p id="status">Click "Reset Database" to begin...</p>
+
+    <script type="module">
+        import { initDb, exportDb } from './src/database/initDB.js';
+
+        let db = null;
+
+        document.getElementById('resetBtn').addEventListener('click', async () => {
+            document.getElementById('status').textContent = 'Resetting database...';
+            console.log("Resetting database...");
+            
+            db = await initDb();
+            
+            console.log("✅ Database reset complete!");
+            
+            // Verify it worked
+            const result = db.exec("SELECT * FROM stageTypeAllowedContexts");
+            console.log("Allowed contexts:", result);
+            
+            document.getElementById('status').textContent = '✅ Database reset complete! You can now export it.';
+            document.getElementById('exportBtn').disabled = false;
+
+            // Verify LAB was added
+            const labResult = db.exec("SELECT ingredientTypeID, name FROM ingredientTypes WHERE name LIKE '%LAB%'");
+            console.log("LAB ingredient:", labResult);
+
+            const labContextResult = db.exec(`
+                SELECT it.name, uc.name as context
+                FROM ingredientTypes it
+                JOIN ingredientTypeContexts itc ON it.ingredientTypeID = itc.ingredientTypeID
+                JOIN usageContexts uc ON itc.contextID = uc.contextID
+                WHERE it.name LIKE '%LAB%'
+            `);
+            console.log("LAB contexts:", labContextResult);
+                    });
+
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            if (db) {
+                exportDb(db, 'brewcode.db');
+                document.getElementById('status').textContent = '✅ Database exported as brewcode.db!';
+            }
+        });
+    </script>
+</body>
+</html>

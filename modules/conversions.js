@@ -297,3 +297,10 @@ function densityCorrection(value, sampleTemp, calibrationTemp, temperatureUnit, 
     // Convert back to original density unit
     return convertDensity(correctedSG, "sg", densityUnitNorm);
 }
+
+export {
+    CONVERSIONS,
+    convert,
+    normaliseUnit,
+    densityCorrection
+};

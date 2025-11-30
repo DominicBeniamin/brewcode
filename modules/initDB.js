@@ -16,7 +16,7 @@ async function initDb() {
 
     // Step 3: Load schema from file
     console.log("Loading schema...");
-    const response = await fetch('./src/database/schema.sql');
+    const response = await fetch('../database/schema.sql');
     const schemaSql = await response.text();
     
     console.log("Schema loaded. Executing SQL...");

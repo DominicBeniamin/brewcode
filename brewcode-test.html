@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BrewCode Test</title>
+</head>
+<body>
+    <h1>BrewCode API Test</h1>
+    <button onclick="runTest()">Run Test</button>
+    <pre id="output"></pre>
+    
+    <script type="module">
+        import BrewCode from './brewcode.js';
+        
+        window.runTest = async function() {
+            const output = document.getElementById('output');
+            output.textContent = 'Running tests...\n';
+            
+            try {
+                await BrewCode.init();
+                output.textContent += '✅ Database initialized\n';
+                
+                const types = BrewCode.ingredient.getAllTypes();
+                output.textContent += `✅ Found ${types.length} ingredient types\n`;
+                
+                output.textContent += '\n🎉 ALL TESTS PASSED!';
+            } catch (error) {
+                output.textContent += `\n❌ ERROR: ${error.message}`;
+            }
+        };
+    </script>
+</body>
+</html>

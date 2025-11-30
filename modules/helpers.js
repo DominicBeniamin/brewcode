@@ -1,11 +1,11 @@
-// helpers.js (or universalHelpers.js)
+// helpers.js
 
 /**
  * Convert SQL.js result to array of objects
  * @param {Array} result - Result from db.exec()
  * @returns {Array} Array of objects
  */
-export function resultToObjects(result) {
+function resultToObjects(result) {
     if (!result || result.length === 0 || result[0].values.length === 0) {
         return [];
     }
@@ -25,7 +25,7 @@ export function resultToObjects(result) {
 /**
  * Internal helper for updating isActive status
  * 
- * DO NOT EXPORT - For internal use only by manager modules
+ * For internal use only by manager modules.
  * This provides the shared SQL logic while specific functions handle validation
  * 
  * @param {Object} db - SQL.js database instance
@@ -35,7 +35,7 @@ export function resultToObjects(result) {
  * @param {number} isActive - New status (0 or 1)
  * @private
  */
-export function _updateActiveStatus(db, tableName, idColumn, id, isActive) {
+function _updateActiveStatus(db, tableName, idColumn, id, isActive) {
     if (isActive !== 0 && isActive !== 1) {
         throw new Error('isActive must be 0 or 1');
     }

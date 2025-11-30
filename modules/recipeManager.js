@@ -1283,9 +1283,14 @@ function removeRecipeStage(db, stageID) {
         throw new Error(`Stage ID ${stageID} does not exist`);
     }
     
-    // STEP 3: CHECK IF STAGE IS REQUIRED
-    const stageName = typeResult[0].values[0][0];
-    const isRequired = typeResult[0].values[0][1];
+// STEP 3: CHECK IF STAGE IS REQUIRED
+const stageTypeID = result[0].values[0][0];
+
+const typeCheckSql = `SELECT name, isRequired FROM stageTypes WHERE stageTypeID = ?`;
+const typeResult = db.exec(typeCheckSql, [stageTypeID]);
+
+const stageName = typeResult[0].values[0][0];
+const isRequired = typeResult[0].values[0][1];
 
     if (isRequired === 1) {
         throw new Error(`Cannot delete required stage '${stageName}'`);
