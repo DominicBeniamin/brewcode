@@ -2,13 +2,13 @@
 -- BREWCODE DATABASE SCHEMA
 -- =============================================================================
 -- This database manages recipes, batches, ingredients, equipment, and inventory
--- for wine, mead, and cider production.
+-- for wine, mead, and cider ingrediention.
 --
 -- Key Concepts:
 -- - RECIPES: Templates with stages and ingredient requirements
--- - BATCHES: Actual production runs following a recipe (snapshot at creation)
+-- - BATCHES: Actual ingrediention runs following a recipe (snapshot at creation)
 -- - INGREDIENTS: Consumables used IN the beverage (juice, honey, yeast)
--- - SUPPLIES: Consumables used FOR production (bottles, sanitizer, caps)
+-- - SUPPLIES: Consumables used FOR ingrediention (bottles, sanitizer, caps)
 -- - EQUIPMENT: Reusable items (fermenters, carboys)
 -- =============================================================================
 
@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS ingredientTypes (
 -- -----------------------------------------------------------------------------
 -- Supply Types
 -- -----------------------------------------------------------------------------
--- Generic supply types for consumables used FOR production (not in beverage).
+-- Generic supply types for consumables used FOR ingrediention (not in beverage).
 -- Examples: "Sanitizer (Star San)", "Bottle (750ml)", "Crown Cap #26", "Cork (#9)"
 --
 -- Purpose: Track consumables that support the brewing process
@@ -160,8 +160,8 @@ CREATE TABLE IF NOT EXISTS ingredientTypes (
 -- - Other consumables (shrink wrap, carrier boxes)
 --
 -- Key Difference from ingredientTypes:
--- - Supplies are used FOR production (sanitize equipment, package product)
--- - Ingredients are used IN production (become part of the beverage)
+-- - Supplies are used FOR ingrediention (sanitize equipment, package ingredient)
+-- - Ingredients are used IN ingrediention (become part of the beverage)
 --
 -- Note: Supplies do NOT have usage contexts (they don't go in recipe stages)
 -- Note: Supplies do NOT have beverageTypes (not part of the beverage)
@@ -209,12 +209,14 @@ CREATE TABLE IF NOT EXISTS supplyTypes (
 CREATE TABLE IF NOT EXISTS equipment (
   equipmentID         INTEGER PRIMARY KEY AUTOINCREMENT,
   name                TEXT NOT NULL,         -- User-defined name: "Primary Fermenter #1", "TILT Blue"
-  type                TEXT NOT NULL,         -- "fermenter", "carboy", "monitor", "hydrometer", "scale"
+  type                TEXT NOT NULL,         -- "fermentation Vessel", "monitoring device", "measurement", "processing"
   canBeOccupied       INTEGER DEFAULT 0,     -- 1 = tracked for batch occupancy, 0 = general tool
   capacityL           REAL,                  -- Volume capacity (NULL for non-vessels)
   material            TEXT,                  -- "Glass", "Plastic", "Stainless Steel", "Silicone"
   notes               TEXT,                  -- Maintenance notes, specifications, etc.
-  isActive            INTEGER DEFAULT 1      -- 1 = in use, 0 = retired/broken
+  isActive            INTEGER DEFAULT 1,     -- 1 = in use, 0 = retired/broken
+  calibrationTemp     REAL,                  -- Calibration temperature in °C (if applicable)
+  calibrationTempUnit TEXT                   -- "C" or "F" (if applicable)
 );
 
 -- -----------------------------------------------------------------------------
@@ -346,35 +348,35 @@ CREATE TABLE IF NOT EXISTS ingredientTypeExtendedData (
 );
 
 -- -----------------------------------------------------------------------------
--- Products
+-- ingredients
 -- -----------------------------------------------------------------------------
--- Specific branded products that users actually buy and use.
--- Links to generic ingredientTypes - products are "instances" of types.
+-- Specific branded ingredients that users actually buy and use.
+-- Links to generic ingredientTypes - ingredients are "instances" of types.
 --
 -- Examples:
 --   ingredientType: "Apple Juice"
---     ├─ product: brandName="K Classic", productName="Apfel Saft"
---     ├─ product: brandName="Wesergold", productName="Naturtrüb"
---     └─ product: brandName=NULL, productName="My homemade pressed juice"
+--     ├─ ingredient: brand="K Classic", name="Apfel Saft"
+--     ├─ ingredient: brand="Wesergold", name="Naturtrüb"
+--     └─ ingredient: brand=NULL, name="My homemade pressed juice"
 --
 --   ingredientType: "Honey (Wildflower)"
---     ├─ product: brandName="Kirkland", productName="Wildflower Honey"
---     └─ product: brandName=NULL, productName="Local beekeeper honey"
+--     ├─ ingredient: brand="Kirkland", name="Wildflower Honey"
+--     └─ ingredient: brand=NULL, name="Local beekeeper honey"
 --
--- brandName: NULL for homemade or generic items
+-- brand: NULL for homemade or generic items
 -- packageSize/Unit: NULL for bulk or non-standardized items
 --
--- Purpose: Allows inventory tracking at the product level while keeping
+-- Purpose: Allows inventory tracking at the ingredient level while keeping
 -- recipes at the generic ingredient type level
 --
--- ON DELETE CASCADE: If ingredient type deleted, remove all its products
--- Note: Batch history preserved via productName snapshot in batchIngredients
+-- ON DELETE CASCADE: If ingredient type deleted, remove all its ingredients
+-- Note: Batch history preserved via ingredientName snapshot in batchIngredients
 -- -----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS products (
-  productID           INTEGER PRIMARY KEY AUTOINCREMENT,
+CREATE TABLE IF NOT EXISTS ingredients (
+  ingredientID        INTEGER PRIMARY KEY AUTOINCREMENT,
   ingredientTypeID    INTEGER NOT NULL,
-  brandName           TEXT,                     -- NULL for homemade/generic
-  productName         TEXT NOT NULL,            -- User-defined name
+  brand               TEXT,                     -- NULL for homemade/generic
+  name                TEXT NOT NULL,            -- User-defined name
   packageSize         REAL,                     -- NULL if not standardized
   packageUnit         TEXT,                     -- "L", "kg", "g", "lb", etc.
   notes               TEXT,                     -- User notes
@@ -388,24 +390,24 @@ CREATE TABLE IF NOT EXISTS products (
 -- Specific branded supplies that users actually buy and use.
 -- Links to generic supplyTypes - supplies are "instances" of types.
 -- 
--- Key Difference from Products:
--- - Products: Ingredients used IN the beverage (juice, honey, yeast)
--- - Supplies: Consumables used FOR production (bottles, sanitizer, caps)
+-- Key Difference from ingredients:
+-- - ingredients: Ingredients used IN the beverage (juice, honey, yeast)
+-- - Supplies: Consumables used FOR ingrediention (bottles, sanitizer, caps)
 --
 -- Examples:
 --   supplyType: "Sanitizer (Star San)"
---     ├─ supply: brandName="Five Star", productName="Star San 32oz"
---     └─ supply: brandName="Five Star", productName="Star San 1 gallon"
+--     ├─ supply: brand="Five Star", name="Star San 32oz"
+--     └─ supply: brand="Five Star", name="Star San 1 gallon"
 --
 --   supplyType: "Bottle (750ml Wine, Bordeaux)"
---     ├─ supply: brandName="Midwest Supplies", productName="Bordeaux 750ml (case of 12)"
---     └─ supply: brandName=NULL, productName="Recycled wine bottles"
+--     ├─ supply: brand="Midwest Supplies", name="Bordeaux 750ml (case of 12)"
+--     └─ supply: brand=NULL, name="Recycled wine bottles"
 --
 --   supplyType: "Crown Cap (26mm)"
---     ├─ supply: brandName="Oxygen Barrier", productName="Gold oxygen barrier caps"
---     └─ supply: brandName=NULL, productName="Standard crown caps"
+--     ├─ supply: brand="Oxygen Barrier", name="Gold oxygen barrier caps"
+--     └─ supply: brand=NULL, name="Standard crown caps"
 --
--- brandName: NULL for generic or unbranded items
+-- brand: NULL for generic or unbranded items
 -- packageSize/Unit: NULL for bulk or non-standardized items
 --
 -- Purpose: Track consumable supplies separately from recipe ingredients
@@ -416,14 +418,21 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE TABLE IF NOT EXISTS supplies (
   supplyID            INTEGER PRIMARY KEY AUTOINCREMENT,
   supplyTypeID        INTEGER NOT NULL,
-  brandName           TEXT,                     -- NULL for generic
-  productName         TEXT NOT NULL,            -- User-defined name
+  brand               TEXT,                     -- NULL for generic
+  name                TEXT NOT NULL,            -- User-defined name
   packageSize         REAL,                     -- NULL if not standardized
   packageUnit         TEXT,                     -- "L", "kg", "g", "oz", "count"
   notes               TEXT,                     -- User notes, specifications
   isActive            INTEGER DEFAULT 1,        -- 1 = available, 0 = discontinued
   FOREIGN KEY (supplyTypeID) REFERENCES supplyTypes(supplyTypeID) ON DELETE CASCADE
 );
+
+-- Add uniqueness constraint (brand + name must be unique per type)
+CREATE UNIQUE INDEX idx_ingredients_unique 
+ON ingredients(ingredientTypeID, COALESCE(brand, ''), name);
+
+CREATE UNIQUE INDEX idx_supplies_unique 
+ON supplies(supplyTypeID, COALESCE(brand, ''), name);
 
 -- -----------------------------------------------------------------------------
 -- Recipe Stages
@@ -458,7 +467,7 @@ CREATE TABLE IF NOT EXISTS recipeStages (
 -- Recipe Ingredients
 -- -----------------------------------------------------------------------------
 -- Defines ingredients needed for each recipe stage.
--- Links to generic ingredientTypes (not specific products).
+-- Links to generic ingredientTypes (not specific ingredients).
 --
 -- Example:
 --   Recipe: "Traditional Cider"
@@ -468,8 +477,8 @@ CREATE TABLE IF NOT EXISTS recipeStages (
 --     └─ Ingredient: 5g Yeast Nutrient
 --
 -- ingredientTypeID: Links to generic ingredient (e.g., "Apple Juice")
---   - NOT a specific product (e.g., "K Classic Apfel Saft")
---   - Users select specific product when starting a batch
+--   - NOT a specific ingredient (e.g., "K Classic Apfel Saft")
+--   - Users select specific ingredient when starting a batch
 --
 -- scalingMethod: How ingredient scales when batch size changes
 --   - "linear": Scale proportionally (5L juice for 10L batch → 10L for 20L batch)
@@ -557,7 +566,7 @@ CREATE TABLE IF NOT EXISTS recipeIngredientAlternativeOptions (
 -- -----------------------------------------------------------------------------
 -- Batches
 -- -----------------------------------------------------------------------------
--- Actual production runs based on recipes.
+-- Actual ingrediention runs based on recipes.
 -- When a batch is created, recipe data is SNAPSHOTTED (copied) so changes
 -- to the recipe don't affect active batches.
 --
@@ -642,8 +651,8 @@ CREATE TABLE IF NOT EXISTS batchStages (
 --
 -- ingredientTypeID: Generic type from recipe (e.g., "Apple Juice")
 -- ingredientTypeName: Snapshot (preserved if type renamed/deleted)
--- productID: Specific product user selected (e.g., "K Classic Apfel Saft")
--- productName: Snapshot (preserved if product deleted)
+-- ingredientID: Specific ingredient user selected (e.g., "K Classic Apfel Saft")
+-- ingredientName: Snapshot (preserved if ingredient deleted)
 --
 -- plannedAmount/Unit: From recipe, scaled to actual batch size
 --   Example: Recipe says 5L for 5L batch, user makes 10L → planned: 10L
@@ -653,15 +662,15 @@ CREATE TABLE IF NOT EXISTS batchStages (
 -- inventoryLotID: Optional link to inventory for FIFO tracking
 --
 -- ON DELETE CASCADE (batchStageID): If stage deleted, remove ingredients
--- ON DELETE SET NULL (productID): If product deleted, keep snapshot name
+-- ON DELETE SET NULL (ingredientID): If ingredient deleted, keep snapshot name
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS batchIngredients (
   batchIngredientID   INTEGER PRIMARY KEY AUTOINCREMENT,
   batchStageID        INTEGER NOT NULL,              -- Links to batch stage, not batch
   ingredientTypeID    INTEGER NOT NULL,
   ingredientTypeName  TEXT NOT NULL,                 -- Snapshot
-  productID           INTEGER,                       -- Specific product used (nullable)
-  productName         TEXT,                          -- Snapshot (nullable if not selected)
+  ingredientID        INTEGER,                       -- Specific ingredient used (nullable)
+  ingredientName      TEXT,                          -- Snapshot (nullable if not selected)
   plannedAmount       REAL NOT NULL,                 -- From recipe (scaled)
   plannedUnit         TEXT NOT NULL,
   actualAmount        REAL,                          -- What was actually used
@@ -670,14 +679,14 @@ CREATE TABLE IF NOT EXISTS batchIngredients (
   notes               TEXT,                          -- Per-batch notes
   FOREIGN KEY (batchStageID) REFERENCES batchStages(batchStageID) ON DELETE CASCADE,
   FOREIGN KEY (ingredientTypeID) REFERENCES ingredientTypes(ingredientTypeID),
-  FOREIGN KEY (productID) REFERENCES products(productID) ON DELETE SET NULL,
+  FOREIGN KEY (ingredientID) REFERENCES ingredients(ingredientID) ON DELETE SET NULL,
   FOREIGN KEY (inventoryLotID) REFERENCES inventoryLots(lotID) ON DELETE SET NULL
 );
 
 -- -----------------------------------------------------------------------------
 -- Batch Measurements
 -- -----------------------------------------------------------------------------
--- Records all measurements and observations taken during batch production.
+-- Records all measurements and observations taken during batch ingrediention.
 -- Tracks fermentation progress, troubleshoots issues, calculates ABV.
 --
 -- measurementType: Category of measurement
@@ -773,7 +782,7 @@ CREATE TABLE IF NOT EXISTS equipmentUsage (
 -- -----------------------------------------------------------------------------
 -- Inventory Lots
 -- -----------------------------------------------------------------------------
--- Tracks individual purchases/acquisitions of products and supplies.
+-- Tracks individual purchases/acquisitions of ingredients and supplies.
 -- Implements FIFO (First In, First Out) inventory management.
 --
 -- Lot Lifecycle:
@@ -785,7 +794,7 @@ CREATE TABLE IF NOT EXISTS equipmentUsage (
 -- Historical Data Retention:
 --   Consumed/expired lots are NOT deleted - they're archived (status changed)
 --   This preserves:
---     - Cost tracking: Calculate production costs per batch
+--     - Cost tracking: Calculate ingrediention costs per batch
 --     - Usage analytics: Track consumption patterns over time
 --     - Supplier history: Compare quality and pricing
 --     - Audit trail: Troubleshoot issues with specific batches
@@ -793,13 +802,13 @@ CREATE TABLE IF NOT EXISTS equipmentUsage (
 --
 -- FIFO Query Pattern:
 --   SELECT * FROM inventoryLots 
---   WHERE productID = ? 
+--   WHERE ingredientID = ? 
 --   AND status = 'active'
 --   AND quantityRemaining > 0
 --   ORDER BY purchaseDate ASC
 --
--- One table handles both products (ingredients) and supplies (bottles, etc.)
--- Exactly ONE of productID or supplyID must be set (enforced by CHECK constraint)
+-- One table handles both ingredients (ingredients) and supplies (bottles, etc.)
+-- Exactly ONE of ingredientID or supplyID must be set (enforced by CHECK constraint)
 --
 -- quantityPurchased: Original amount bought
 -- quantityRemaining: Current amount left (decreases as used)
@@ -808,8 +817,8 @@ CREATE TABLE IF NOT EXISTS equipmentUsage (
 -- costPerUnit: Price paid per unit (for cost tracking and analytics)
 -- supplier: Where purchased (compare suppliers over time)
 --
--- Example 1: Product (Honey) - Active
---   productID: 5 ("Honey (Wildflower)")
+-- Example 1: ingredient (Honey) - Active
+--   ingredientID: 5 ("Honey (Wildflower)")
 --   supplyID: NULL
 --   quantityPurchased: 10.0
 --   quantityRemaining: 7.5
@@ -819,7 +828,7 @@ CREATE TABLE IF NOT EXISTS equipmentUsage (
 --   supplier: "Local beekeeper"
 --   status: "active"
 --
--- Example 2: Product (Honey) - Consumed
+-- Example 2: ingredient (Honey) - Consumed
 --   quantityPurchased: 10.0
 --   quantityRemaining: 0.0
 --   status: "consumed"
@@ -831,12 +840,12 @@ CREATE TABLE IF NOT EXISTS equipmentUsage (
 --   status: "expired"
 --   (User decided not to use expired bottles)
 --
--- ON DELETE CASCADE: If product/supply deleted, remove inventory lots
---   Note: Only delete product/supply if no batches reference it
+-- ON DELETE CASCADE: If ingredient/supply deleted, remove inventory lots
+--   Note: Only delete ingredient/supply if no batches reference it
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS inventoryLots (
   lotID               INTEGER PRIMARY KEY AUTOINCREMENT,
-  productID           INTEGER,                       -- For ingredients
+  ingredientID           INTEGER,                       -- For ingredients
   supplyID            INTEGER,                       -- For supplies
   quantityPurchased   REAL NOT NULL,                 -- Original amount
   quantityRemaining   REAL NOT NULL,                 -- Current amount left
@@ -847,9 +856,9 @@ CREATE TABLE IF NOT EXISTS inventoryLots (
   supplier            TEXT,                          -- Where purchased
   status              TEXT NOT NULL DEFAULT 'active', -- "active", "consumed", "expired"
   notes               TEXT,                          -- User notes
-  FOREIGN KEY (productID) REFERENCES products(productID) ON DELETE CASCADE,
+  FOREIGN KEY (ingredientID) REFERENCES ingredients(ingredientID) ON DELETE CASCADE,
   FOREIGN KEY (supplyID) REFERENCES supplies(supplyID) ON DELETE CASCADE,
-  CHECK ((productID IS NOT NULL AND supplyID IS NULL) OR (productID IS NULL AND supplyID IS NOT NULL))
+  CHECK ((ingredientID IS NOT NULL AND supplyID IS NULL) OR (ingredientID IS NULL AND supplyID IS NOT NULL))
 );
 
 -- -----------------------------------------------------------------------------
@@ -909,7 +918,7 @@ INSERT OR IGNORE INTO itemCategories (name, description, sortOrder) VALUES
   ('Additives', 'Nutrients, salts, stabilisers, fining agents', 6),
   ('Yeasts & Microbes', 'Yeast strains and microbial cultures', 7),
   
-  -- SUPPLIES (consumables used FOR production, not in beverage)
+  -- SUPPLIES (consumables used FOR ingrediention, not in beverage)
   ('Cleaners & Sanitizers', 'Cleaning and sanitising agents', 20),
   ('Bottles', 'Glass or plastic bottles for packaging', 21),
   ('Closures', 'Corks, caps, screw caps for sealing', 22),
@@ -917,7 +926,7 @@ INSERT OR IGNORE INTO itemCategories (name, description, sortOrder) VALUES
 
 -- Usage Contexts
 INSERT OR IGNORE INTO usageContexts (contextID, name, description) VALUES
-(1, 'fermentable', 'Provides fermentable sugars for alcohol production'),
+(1, 'fermentable', 'Provides fermentable sugars for alcohol ingrediention'),
 (2, 'primer', 'Adds fermentables for carbonation (bottle conditioning)'),
 (3, 'nonfermentable', 'Adds flavour or body without fermenting'),
 (4, 'nutrient', 'Provides nutrients for yeast or microbes'),
@@ -926,7 +935,7 @@ INSERT OR IGNORE INTO usageContexts (contextID, name, description) VALUES
 (7, 'sanitiser', 'Used to sanitise equipment before use'),
 (8, 'prefermentation-treatment', 'Treats must before fermentation (kills wild microbes)'),
 (9, 'fining', 'Clarifies and removes particulates'),
-(10, 'packaging', 'Used to package the final product'),
+(10, 'packaging', 'Used to package the final ingredient'),
 (11, 'fermenter', 'Yeast or microbes that perform fermentation'),
 (12, 'malolactic', 'Lactic acid bacteria for malolactic fermentation'),
 (13, 'stabiliser', 'Prevents fermentation restart after fermentation');
@@ -1003,7 +1012,7 @@ INSERT OR IGNORE INTO ingredientTypes (name, categoryID, description, beverageTy
   ('Champagne Yeast', 7, 'High alcohol tolerance, neutral profile', '["Wine", "Mead", "Cider"]', 0),
   ('Ale Yeast', 7, 'Top-fermenting beer yeast', '["Beer"]', 0),
   ('Lager Yeast', 7, 'Bottom-fermenting beer yeast', '["Beer"]', 0),
-  ('Cider Yeast', 7, 'Yeast specifically for cider production', '["Cider"]', 0),
+  ('Cider Yeast', 7, 'Yeast specifically for cider ingrediention', '["Cider"]', 0),
 
   -- Bacteria
   ('Lactic Acid Bacteria (LAB)', 7, 'For malolactic fermentation - converts malic to lactic acid', '["Wine", "Cider"]', 0),
@@ -1011,32 +1020,29 @@ INSERT OR IGNORE INTO ingredientTypes (name, categoryID, description, beverageTy
   -- Additives
   ('Potassium Metabisulfite (K-meta)', 6, 'Pre-fermentation antiseptic, kills wild yeast/bacteria', NULL, 0),
   ('Campden Tablets', 6, 'Potassium or sodium metabisulfite tablets for must treatment', NULL, 0),
-  ('Potassium Sorbate', 6, 'Post-fermentation stabiliser, prevents yeast reproduction', NULL, 0);
+  ('Potassium Sorbate', 6, 'Post-fermentation stabiliser, prevents yeast reingrediention', NULL, 0);
   
 -- Supply Types Seed Data
 INSERT OR IGNORE INTO supplyTypes (name, categoryID, description) VALUES
   -- Cleaners & Sanitizers
-  ('Sanitizer (Star San)', 8, 'Acid-based no-rinse sanitiser'),
-  ('Sanitizer (Iodophor)', 8, 'Iodine-based sanitiser'),
-  ('Cleaner (PBW)', 8, 'Powdered Brewery Wash - alkaline cleaner'),
-  ('Cleaner (OxiClean)', 8, 'Oxygen-based cleaner'),
+  ('Sanitizer', 8, 'Acid-based no-rinse sanitiser'),
+  ('Cleaner', 8, 'Powdered Brewery Wash - alkaline cleaner'),
   
   -- Bottles
-  ('Bottle (750ml Wine, Bordeaux)', 9, 'Standard wine bottle, Bordeaux shape'),
-  ('Bottle (750ml Wine, Burgundy)', 9, 'Standard wine bottle, Burgundy shape'),
-  ('Bottle (375ml Split)', 9, 'Half bottle for smaller batches'),
-  ('Bottle (12oz Beer, Brown)', 9, 'Standard brown beer bottle'),
+  ('Bottle', 9, 'Bottles for packaging beverages'),
+  ('Keg', 9, 'Cornelius-style keg for kegging beverages'),
+  ('Can', 9, 'Aluminium cans for packaging beverages'),
+  ('Barrel', 9, 'Wooden barrel for aging beverages'),
   
   -- Closures
-  ('Cork (#9 Straight)', 10, 'Standard straight cork for wine bottles'),
-  ('Cork (#8 Tapered)', 10, 'Tapered cork for smaller bottles'),
-  ('Crown Cap (26mm)', 10, 'Standard crown cap for beer bottles'),
-  ('Screw Cap (30x60mm)', 10, 'Screw cap with liner'),
+  ('Cork', 10, 'Standard straight cork for wine bottles'),
+  ('Cap, Crown', 10, 'Standard crown cap for beer bottles'),
+  ('Cap, Screw', 10, 'Screw cap with liner'),
   
   -- Other Packaging
-  ('Label (Wine, 4x3 inch)', 11, 'Self-adhesive wine labels'),
-  ('Shrink Capsule (Burgundy)', 11, 'Heat-shrink capsules for wine bottles'),
-  ('Carrier (6-bottle)', 11, 'Cardboard carrier for transport');
+  ('Label', 11, 'Self-adhesive labels'),
+  ('Shrink Capsule', 11, 'Heat-shrink capsules for wine bottles'),
+  ('Carrier', 11, 'Boxes and crates for carrying bottles');
 
 -- Ingredient Type Contexts Seed Data
 -- Assigns usage contexts to ingredient types

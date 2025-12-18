@@ -189,7 +189,7 @@ function createBatch(db, batchData) {
                     db.run(ingredientSql, [
                         batchStageID,
                         recipeIngredient.ingredientTypeID,
-                        recipeIngredient.ingredientTypeName, // Snapshot ingredient name
+                        recipeIngredient.ingredientTypeName, // Snapshot ingredient type name
                         scaledAmount,
                         recipeIngredient.unit,
                         recipeIngredient.notes
@@ -209,8 +209,8 @@ function createBatch(db, batchData) {
                         plannedUnit: recipeIngredient.unit,
                         actualAmount: null,
                         actualUnit: null,
-                        productID: null,
-                        productName: null,
+                        ingredientID: null,
+                        ingredientName: null,
                         notes: recipeIngredient.notes
                     });
                 }
@@ -392,8 +392,8 @@ function getBatchWithDetails(db, batchID) {
                     batchStageID,
                     ingredientTypeID,
                     ingredientTypeName,
-                    productID,
-                    productName,
+                    ingredientID,
+                    ingredientName,
                     plannedAmount,
                     plannedUnit,
                     actualAmount,
@@ -1557,24 +1557,24 @@ function skipBatchStage(db, batchStageID) {
 /**
  * Record ingredient usage for a batch
  * 
- * Records what was actually used (product, amount) vs. what was planned.
+ * Records what was actually used (ingredient, amount) vs. what was planned.
  * Optionally consumes from inventory using FIFO.
  * 
  * @param {Object} db - SQL.js database instance
  * @param {number} batchIngredientID - Batch ingredient to update
  * @param {Object} usageData - Actual usage information
- * @param {number} usageData.productID - Specific product used (required)
+ * @param {number} usageData.ingredientID - Specific ingredient used (required)
  * @param {number} usageData.actualAmount - Amount actually used (required)
  * @param {string} usageData.actualUnit - Unit of measurement (required)
  * @param {string} [usageData.notes] - Additional notes (optional)
  * @param {boolean} [usageData.consumeFromInventory=false] - Consume from inventory (FIFO)
  * @returns {Object} { success: boolean, message: string, batchIngredientID: number, inventoryConsumed: Object|null }
- * @throws {Error} If validation fails or product doesn't match ingredient type
+ * @throws {Error} If validation fails or ingredient doesn't match ingredient type
  * 
  * @example
  * // Record honey usage without consuming inventory
  * const result = recordIngredientUsage(db, 8, {
- *     productID: 15,
+ *     ingredientID: 15,
  *     actualAmount: 3.2,
  *     actualUnit: "kg",
  *     notes: "Used slightly more than planned"
@@ -1583,7 +1583,7 @@ function skipBatchStage(db, batchStageID) {
  * @example
  * // Record apple juice usage and consume from inventory
  * const result = recordIngredientUsage(db, 9, {
- *     productID: 3,
+ *     ingredientID: 3,
  *     actualAmount: 10.5,
  *     actualUnit: "L",
  *     consumeFromInventory: true
@@ -1597,8 +1597,8 @@ function recordIngredientUsage(db, batchIngredientID, usageData) {
     }
     
     // STEP 2: VALIDATE REQUIRED FIELDS
-    if (!usageData.productID || typeof usageData.productID !== 'number') {
-        throw new Error('Valid productID is required');
+    if (!usageData.ingredientID || typeof usageData.ingredientID !== 'number') {
+        throw new Error('Valid ingredientID is required');
     }
     
     if (!usageData.actualAmount || typeof usageData.actualAmount !== 'number' || usageData.actualAmount <= 0) {
@@ -1629,25 +1629,28 @@ function recordIngredientUsage(db, batchIngredientID, usageData) {
     
     const [_, ingredientTypeID, ingredientTypeName, plannedAmount, plannedUnit] = ingredientResult[0].values[0];
     
-    // STEP 4: VALIDATE PRODUCT EXISTS AND MATCHES INGREDIENT TYPE
-    const productSql = `
-        SELECT productID, productName, ingredientTypeID
-        FROM products
-        WHERE productID = ?
+    // STEP 4: VALIDATE INGREDIENT EXISTS AND MATCHES INGREDIENT TYPE
+    const ingredientCheckSql = `
+        SELECT ingredientID, name, brand, ingredientTypeID
+        FROM ingredients
+        WHERE ingredientID = ?
     `;
     
-    const productResult = db.exec(productSql, [usageData.productID]);
+    const ingredientCheckResult = db.exec(ingredientCheckSql, [usageData.ingredientID]);
     
-    if (productResult.length === 0 || productResult[0].values.length === 0) {
-        throw new Error(`Product ID ${usageData.productID} does not exist`);
+    if (ingredientCheckResult.length === 0 || ingredientCheckResult[0].values.length === 0) {
+        throw new Error(`Ingredient ID ${usageData.ingredientID} does not exist`);
     }
     
-    const [productID, productName, productIngredientTypeID] = productResult[0].values[0];
+    const [ingredientID, ingredientName, ingredientBrand, ingredientIngredientTypeID] = ingredientCheckResult[0].values[0];
     
-    // STEP 5: VALIDATE PRODUCT MATCHES INGREDIENT TYPE
-    if (productIngredientTypeID !== ingredientTypeID) {
+    // Build display name (brand + name if brand exists, otherwise just name)
+    const displayName = ingredientBrand ? `${ingredientBrand} ${ingredientName}` : ingredientName;
+    
+    // STEP 5: VALIDATE INGREDIENT MATCHES INGREDIENT TYPE
+    if (ingredientIngredientTypeID !== ingredientTypeID) {
         throw new Error(
-            `Product "${productName}" (type ID ${productIngredientTypeID}) does not match ` +
+            `Ingredient "${displayName}" (type ID ${ingredientIngredientTypeID}) does not match ` +
             `required ingredient type "${ingredientTypeName}" (type ID ${ingredientTypeID})`
         );
     }
@@ -1662,7 +1665,7 @@ function recordIngredientUsage(db, batchIngredientID, usageData) {
         // STEP 7: CONSUME FROM INVENTORY (if requested)
         if (usageData.consumeFromInventory) {
             try {
-                inventoryConsumed = consumeFromInventory(db, usageData.productID, usageData.actualAmount, usageData.actualUnit);
+                inventoryConsumed = consumeFromInventory(db, usageData.ingredientID, usageData.actualAmount, usageData.actualUnit);
                 inventoryLotID = inventoryConsumed.consumed[0]?.lotID || null;
                 
                 console.log(`Consumed ${inventoryConsumed.totalConsumed} ${inventoryConsumed.unit} from ${inventoryConsumed.consumed.length} inventory lot(s)`);
@@ -1678,8 +1681,8 @@ function recordIngredientUsage(db, batchIngredientID, usageData) {
         const updateSql = `
             UPDATE batchIngredients
             SET 
-                productID = ?,
-                productName = ?,
+                ingredientID = ?,
+                ingredientName = ?,
                 actualAmount = ?,
                 actualUnit = ?,
                 inventoryLotID = ?,
@@ -1688,8 +1691,8 @@ function recordIngredientUsage(db, batchIngredientID, usageData) {
         `;
         
         db.run(updateSql, [
-            usageData.productID,
-            productName,
+            usageData.ingredientID,
+            displayName,
             usageData.actualAmount,
             usageData.actualUnit.trim(),
             inventoryLotID,
@@ -1697,7 +1700,7 @@ function recordIngredientUsage(db, batchIngredientID, usageData) {
             batchIngredientID
         ]);
         
-        console.log(`Recorded usage for ingredient "${ingredientTypeName}": ${usageData.actualAmount} ${usageData.actualUnit} of "${productName}"`);
+        console.log(`Recorded usage for ingredient "${ingredientTypeName}": ${usageData.actualAmount} ${usageData.actualUnit} of "${displayName}"`);
         
         // STEP 9: COMMIT TRANSACTION
         db.run("COMMIT");
@@ -1705,7 +1708,7 @@ function recordIngredientUsage(db, batchIngredientID, usageData) {
         // STEP 10: RETURN SUCCESS
         return {
             success: true,
-            message: `Recorded ${usageData.actualAmount} ${usageData.actualUnit} of "${productName}" ` +
+            message: `Recorded ${usageData.actualAmount} ${usageData.actualUnit} of "${displayName}" ` +
                      `(planned: ${plannedAmount} ${plannedUnit})`,
             batchIngredientID: batchIngredientID,
             inventoryConsumed: inventoryConsumed
@@ -2358,7 +2361,7 @@ function getBatchTimeline(db, batchID) {
             SELECT 
                 bi.batchIngredientID,
                 bi.ingredientTypeName,
-                bi.productName,
+                bi.ingredientName,
                 bi.actualAmount,
                 bi.actualUnit,
                 bs.batchStageID,
@@ -2380,7 +2383,7 @@ function getBatchTimeline(db, batchID) {
             timeline.push({
                 date: date,
                 type: "ingredient_used",
-                description: `Used ${ing.actualAmount} ${ing.actualUnit} of ${ing.productName || ing.ingredientTypeName}`,
+                description: `Used ${ing.actualAmount} ${ing.actualUnit} of ${ing.ingredientName || ing.ingredientTypeName}`,
                 stageID: ing.batchStageID,
                 ingredientID: ing.batchIngredientID
             });
@@ -2453,7 +2456,7 @@ function getBatchCost(db, batchID) {
         const ingredientsSql = `
             SELECT 
                 bi.ingredientTypeName,
-                bi.productName,
+                bi.ingredientName,
                 bi.actualAmount,
                 bi.actualUnit,
                 bi.inventoryLotID,
@@ -2508,7 +2511,7 @@ function getBatchCost(db, batchID) {
                 
                 details.push({
                     type: "ingredient",
-                    name: ing.productName || ing.ingredientTypeName,
+                    name: ing.ingredientName || ing.ingredientTypeName,
                     amount: ing.actualAmount,
                     unit: ing.actualUnit,
                     cost: parseFloat(cost.toFixed(2))

@@ -14,13 +14,127 @@
 
     <script type="module">
         import BrewCode from '../modules/brewcode.js';
+        import { renderSettingsPage, attachSettingsHandlers } from '../modules/settingsUI.js';
+        import { renderNavigation, toggleMobileMenu } from '../modules/navigation.js';
+        import { toggleFilters } from '../modules/filterHelpers.js';
+        import { renderRecipesPage, renderRecipeDetail, filterRecipes } from '../modules/recipesPage.js';
+        import { renderBatchesPage, renderBatchDetail, filterBatches } from '../modules/batchesPage.js';
+        import { renderInventoryPage, renderInventoryDetail, applyInventoryFilters, updateCategoryDropdown } from '../modules/inventoryPage.js';
+        import { renderEquipmentPage, filterEquipmentBySearch, applyEquipmentFilters } from '../modules/equipmentPage.js';
+        import { renderDashboardPage } from '../modules/dashboardPage.js';
+        import { showAddInventoryForm, showCreateNewItemForm, backToItemSelection, updateCategoryOptions, updateTypeOptions, toggleBrandInput, showCreateTypeInline, hideCreateTypeInline, createTypeInline, selectInventoryItem, toggleCostInput, updateCostCalculation } from '../modules/inventoryForms.js';
+        import { showAddEquipmentForm, showEditEquipmentForm } from '../modules/equipmentForms.js';
+        import { closeModal } from '../modules/formHelpers.js';
 
-        // Check if user has an existing database
-        function hasExistingDatabase() {
-            return localStorage.getItem('brewcode_db_location') !== null;
+        // ===== SESSION STATE =====
+        let sessionState = {
+            hasUnsavedChanges: false,
+            lastSaveTime: null,
+            currentFilename: null,
+            isDatabaseLoaded: false
+        };
+
+        // Mark database as modified
+        function markDatabaseModified() {
+            sessionState.hasUnsavedChanges = true;
         }
 
-        // Show welcome screen for first-time users
+        // Mark database as saved
+        function markDatabaseSaved(filename) {
+            sessionState.hasUnsavedChanges = false;
+            sessionState.lastSaveTime = new Date();
+            sessionState.currentFilename = filename;
+        }
+
+        // Wrap BrewCode methods to track changes
+        function wrapBrewCodeForChangeTracking() {
+            const methodsToWrap = [
+                ['batch', 'create'], ['batch', 'update'], ['batch', 'delete'],
+                ['batch', 'start'], ['batch', 'complete'], ['batch', 'abandon'],
+                ['stage', 'start'], ['stage', 'complete'], ['stage', 'skip'],
+                ['ingredient', 'recordUsage'], ['measurement', 'add'],
+                ['equipment', 'create'], ['equipment', 'update'],
+                ['equipment', 'assignToStage'], ['equipment', 'releaseFromStage'],
+                ['recipe', 'create'], ['recipe', 'update'], ['recipe', 'delete'],
+                ['recipe', 'addStage'], ['recipe', 'updateStage'], ['recipe', 'removeStage'],
+                ['inventory', 'addLot'], ['inventory', 'consume'], ['inventory', 'markExpired'],
+                ['settings', 'update']
+            ];
+
+            methodsToWrap.forEach(([namespace, method]) => {
+                const original = BrewCode[namespace][method];
+                BrewCode[namespace][method] = function(...args) {
+                    const result = original.apply(this, args);
+                    markDatabaseModified();
+                    return result;
+                };
+            });
+        }
+
+        // Save database to file
+        function saveDatabase() {
+            if (!sessionState.isDatabaseLoaded) {
+                alert('No database loaded to save');
+                return;
+            }
+
+            try {
+                const db = BrewCode.getDb();
+                const data = db.export();
+                const blob = new Blob([data], { type: 'application/x-sqlite3' });
+                
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = sessionState.currentFilename || 'brewcode.db';
+                a.click();
+                
+                URL.revokeObjectURL(url);
+                
+                markDatabaseSaved(a.download);
+                showToast('✔ Database saved successfully', 'success');
+                
+                // Refresh settings page if we're on it
+                if (window.brewcode.currentPage === 'settings') {
+                    showSettings();
+                }
+                
+            } catch (error) {
+                console.error('Failed to save database:', error);
+                showToast('✕ Failed to save database', 'error');
+            }
+        }
+
+        // Show toast notification
+        function showToast(message, type = 'info') {
+            const colors = {
+                success: 'bg-green-900/90 border-green-500 text-green-200',
+                error: 'bg-red-900/90 border-red-500 text-red-200',
+                info: 'bg-blue-900/90 border-blue-500 text-blue-200'
+            };
+
+            const toast = document.createElement('div');
+            toast.className = `fixed top-4 right-4 ${colors[type]} border px-6 py-4 rounded-lg shadow-lg z-50 animate-fade-in`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.add('animate-fade-out');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Check if this is first time user
+        function isFirstTimeUser() {
+            return localStorage.getItem('brewcode_has_used') === null;
+        }
+
+        // Mark as used
+        function markAsUsed() {
+            localStorage.setItem('brewcode_has_used', 'true');
+        }
+
+        // Show welcome screen
         function showWelcomeScreen() {
             document.getElementById('app').innerHTML = `
                 <div class="min-h-screen flex items-center justify-center p-4">
@@ -33,16 +147,18 @@
                         <div class="bg-gray-800 rounded-lg p-8 shadow-xl border border-gray-700">
                             <h2 class="text-2xl font-bold mb-4">Welcome to Brewcode!</h2>
                             <p class="text-gray-300 mb-6">
-                                Before we begin, you need to choose where to store your brewing database.
-                                This allows you to access your recipes, batches, and inventory from multiple devices.
+                                Brewcode stores your data in a database file on your device.
+                                You can keep this file in a cloud folder (Dropbox, Google Drive, iCloud) 
+                                to access it from multiple devices.
                             </p>
 
                             <div class="bg-blue-900/30 border border-blue-500/50 rounded-lg p-4 mb-6">
-                                <h3 class="font-semibold text-blue-300 mb-2">💡 Recommended Setup:</h3>
+                                <h3 class="font-semibold text-blue-300 mb-2">💡 How it works:</h3>
                                 <ul class="text-sm text-gray-300 space-y-1">
-                                    <li>• Save to a cloud folder (Dropbox, Google Drive, iCloud, OneDrive)</li>
-                                    <li>• Access from your phone and computer</li>
-                                    <li>• Automatic backup and sync</li>
+                                    <li>• Start with a new database or load an existing one</li>
+                                    <li>• Work on your recipes and batches</li>
+                                    <li>• Go to Settings and click "Save" when done</li>
+                                    <li>• Keep the file in your cloud folder for sync</li>
                                 </ul>
                             </div>
 
@@ -51,19 +167,19 @@
                                     onclick="window.brewcode.createNewDatabase()"
                                     class="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors"
                                 >
-                                    Create New Database
+                                    ✨ Create New Database
                                 </button>
 
                                 <button 
                                     onclick="window.brewcode.loadExistingDatabase()"
                                     class="w-full bg-gray-700 hover:bg-gray-600 text-white font-semibold py-4 px-6 rounded-lg transition-colors"
                                 >
-                                    Load Existing Database
+                                    📂 Load Existing Database
                                 </button>
                             </div>
 
                             <p class="text-xs text-gray-500 mt-6 text-center">
-                                Your database file is stored locally on your device. No data is sent to any server.
+                                Your data stays on your device. Nothing is sent to any server.
                             </p>
                         </div>
                     </div>
@@ -71,128 +187,31 @@
             `;
         }
 
-        // Create a new database and prompt user to save it
+        // Create new database
         async function createNewDatabase() {
             try {
                 showLoadingScreen('Creating new database...');
-                
-                // Initialize empty database
                 await BrewCode.init();
                 
-                // Export it immediately so user can save
-                const db = BrewCode.getDb();
-                const data = db.export();
-                const blob = new Blob([data], { type: 'application/x-sqlite3' });
+                sessionState.isDatabaseLoaded = true;
+                sessionState.currentFilename = 'brewcode.db';
+                sessionState.hasUnsavedChanges = true;
+                sessionState.lastSaveTime = null;
                 
-                // Create download link
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'brewcode.db';
+                markAsUsed();
+                wrapBrewCodeForChangeTracking();
+                launchMainApp();
                 
-                showSaveInstructions(a);
+                setTimeout(() => {
+                    showToast('💾 Remember to save your database in Settings when done!', 'info');
+                }, 2000);
                 
             } catch (error) {
                 showError('Failed to create database', error);
             }
         }
 
-        // Show instructions for saving the database
-        function showSaveInstructions(downloadLink) {
-            document.getElementById('app').innerHTML = `
-                <div class="min-h-screen flex items-center justify-center p-4">
-                    <div class="max-w-2xl w-full">
-                        <div class="bg-gray-800 rounded-lg p-8 shadow-xl border border-gray-700">
-                            <h2 class="text-2xl font-bold mb-4 text-amber-500">Save Your Database</h2>
-                            
-                            <div class="bg-amber-900/30 border border-amber-500/50 rounded-lg p-4 mb-6">
-                                <p class="text-amber-200 mb-4">
-                                    <strong>Important:</strong> Click the button below to download your database file.
-                                    Save it to a cloud folder for easy access across devices.
-                                </p>
-                            </div>
-
-                            <ol class="text-gray-300 space-y-3 mb-6">
-                                <li>1. Click "Download Database File"</li>
-                                <li>2. Save it to your cloud folder (recommended: <code class="bg-gray-900 px-2 py-1 rounded">Dropbox/Brewcode/</code>)</li>
-                                <li>3. Come back and click "I've Saved It"</li>
-                            </ol>
-
-                            <div class="space-y-4">
-                                <button 
-                                    id="downloadBtn"
-                                    class="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors"
-                                >
-                                    📥 Download Database File
-                                </button>
-
-                                <button 
-                                    onclick="window.brewcode.confirmDatabaseSaved()"
-                                    class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors"
-                                >
-                                    ✓ I've Saved It - Continue
-                                </button>
-
-                                <button 
-                                    onclick="window.brewcode.showWelcomeScreen()"
-                                    class="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 px-6 rounded-lg transition-colors"
-                                >
-                                    ← Back
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            // Attach download handler
-            document.getElementById('downloadBtn').onclick = () => {
-                downloadLink.click();
-            };
-        }
-
-        // User confirms they saved the database
-        function confirmDatabaseSaved() {
-            // Store that user has completed setup
-            localStorage.setItem('brewcode_db_location', 'user_selected');
-            
-            showInstructionsForNextTime();
-        }
-
-        // Show instructions for loading database next time
-        function showInstructionsForNextTime() {
-            document.getElementById('app').innerHTML = `
-                <div class="min-h-screen flex items-center justify-center p-4">
-                    <div class="max-w-2xl w-full">
-                        <div class="bg-gray-800 rounded-lg p-8 shadow-xl border border-gray-700">
-                            <div class="text-center mb-6">
-                                <div class="text-6xl mb-4">✅</div>
-                                <h2 class="text-2xl font-bold text-green-500 mb-2">Setup Complete!</h2>
-                            </div>
-
-                            <div class="bg-blue-900/30 border border-blue-500/50 rounded-lg p-6 mb-6">
-                                <h3 class="font-semibold text-blue-300 mb-3">📌 Next Time You Use Brewcode:</h3>
-                                <ol class="text-gray-300 space-y-2">
-                                    <li>1. Open Brewcode</li>
-                                    <li>2. Click "Load Existing Database"</li>
-                                    <li>3. Select your <code class="bg-gray-900 px-2 py-1 rounded">brewcode.db</code> file</li>
-                                    <li>4. Start brewing! 🍺</li>
-                                </ol>
-                            </div>
-
-                            <button 
-                                onclick="window.brewcode.loadExistingDatabase()"
-                                class="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors"
-                            >
-                                Load Database Now
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        // Load existing database from file
+        // Load existing database
         async function loadExistingDatabase() {
             const input = document.createElement('input');
             input.type = 'file';
@@ -204,13 +223,15 @@
 
                 try {
                     showLoadingScreen('Loading database...');
-                    
                     await BrewCode.import(file);
                     
-                    // Mark as setup complete
-                    localStorage.setItem('brewcode_db_location', 'user_selected');
+                    sessionState.isDatabaseLoaded = true;
+                    sessionState.currentFilename = file.name;
+                    sessionState.hasUnsavedChanges = false;
+                    sessionState.lastSaveTime = new Date(file.lastModified);
                     
-                    // Launch main app
+                    markAsUsed();
+                    wrapBrewCodeForChangeTracking();
                     launchMainApp();
                     
                 } catch (error) {
@@ -253,97 +274,263 @@
             `;
         }
 
-        // Launch main application
+        // Launch main app
         function launchMainApp() {
+            navigate('dashboard');
+        }
+
+        // Navigate to pages
+        function navigate(pageId) {
+            window.brewcode.currentPage = pageId;
+            
+            const mobileMenu = document.getElementById('mobileMenu');
+            if (mobileMenu && !mobileMenu.classList.contains('hidden')) {
+                mobileMenu.classList.add('hidden');
+            }
+            
+            const pages = {
+                dashboard: showDashboard,
+                batches: showBatchesPage,
+                recipes: showRecipesPage,
+                inventory: showInventoryPage,
+                equipment: showEquipmentPage,
+                settings: showSettings
+            };
+            
+            (pages[pageId] || showDashboard)();
+        }
+
+        // Page rendering functions
+        function showDashboard() {
+            const content = renderDashboardPage(BrewCode);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('dashboard') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+        }
+
+        function showBatchesPage() {
+            const content = renderBatchesPage(BrewCode);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('batches') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+        }
+
+        function viewBatch(batchID) {
+            const content = renderBatchDetail(BrewCode, batchID);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('batches') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+        }
+
+        function startBatch(batchID) {
+            if (confirm('Start this batch?')) {
+                BrewCode.batch.start(batchID);
+                viewBatch(batchID);
+            }
+        }
+
+        function completeBatch(batchID) {
+            if (confirm('Mark this batch as complete?')) {
+                BrewCode.batch.complete(batchID);
+                viewBatch(batchID);
+            }
+        }
+
+        function startStage(batchStageID) {
+            BrewCode.stage.start(batchStageID);
             const batches = BrewCode.batch.getAll();
-            const recipes = BrewCode.recipe.getAll();
-
-            document.getElementById('app').innerHTML = `
-                <div class="min-h-screen p-8">
-                    <h1 class="text-4xl font-bold text-amber-500 mb-8">🍺 Brewcode</h1>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                        <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
-                            <div class="text-3xl font-bold text-amber-500">${batches.length}</div>
-                            <div class="text-gray-400">Batches</div>
-                        </div>
-                        <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
-                            <div class="text-3xl font-bold text-blue-500">${recipes.length}</div>
-                            <div class="text-gray-400">Recipes</div>
-                        </div>
-                        <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
-                            <div class="text-3xl font-bold text-green-500">0</div>
-                            <div class="text-gray-400">Inventory</div>
-                        </div>
-                        <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
-                            <div class="text-3xl font-bold text-purple-500">0</div>
-                            <div class="text-gray-400">Equipment</div>
-                        </div>
-                    </div>
-
-                    <div class="bg-green-900/20 border border-green-500 rounded-lg p-4">
-                        <strong>✓ Connected!</strong> Your database is loaded and ready.
-                    </div>
-                </div>
-            `;
-        }
-
-        // Initialize app
-        async function init() {
-            // Wait for SQL.js to load
-            if (!window.initSqlJs) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-
-            // Check if first time user
-            if (!hasExistingDatabase()) {
-                showWelcomeScreen();
-            } else {
-                // Returning user - show file picker
-                showReturningUserScreen();
+            for (const b of batches) {
+                const full = BrewCode.batch.getWithDetails(b.batchID);
+                if (full.stages.some(s => s.batchStageID === batchStageID)) {
+                    viewBatch(full.batchID);
+                    break;
+                }
             }
         }
 
-        // Show screen for returning users
-        function showReturningUserScreen() {
-            document.getElementById('app').innerHTML = `
-                <div class="min-h-screen flex items-center justify-center p-4">
-                    <div class="max-w-md w-full">
-                        <div class="text-center mb-8">
-                            <h1 class="text-5xl font-bold text-amber-500 mb-4">🍺 Brewcode</h1>
-                            <p class="text-gray-400">Welcome back!</p>
-                        </div>
-
-                        <div class="bg-gray-800 rounded-lg p-8 shadow-xl border border-gray-700">
-                            <button 
-                                onclick="window.brewcode.loadExistingDatabase()"
-                                class="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors mb-4"
-                            >
-                                Load Your Database
-                            </button>
-
-                            <button 
-                                onclick="window.brewcode.createNewDatabase()"
-                                class="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 px-6 rounded-lg transition-colors"
-                            >
-                                Create New Database
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
+        function completeStage(batchStageID) {
+            BrewCode.stage.complete(batchStageID);
+            const batches = BrewCode.batch.getAll();
+            for (const b of batches) {
+                const full = BrewCode.batch.getWithDetails(b.batchID);
+                if (full.stages.some(s => s.batchStageID === batchStageID)) {
+                    viewBatch(full.batchID);
+                    break;
+                }
+            }
         }
 
-        // Expose functions globally for onclick handlers
+        function showRecipesPage() {
+            const content = renderRecipesPage(BrewCode);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('recipes') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+        }
+
+        function viewRecipe(recipeID) {
+            const content = renderRecipeDetail(BrewCode, recipeID);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('recipes') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+        }
+
+        function createBatchFromRecipe(recipeID) {
+            alert(`Creating batch from recipe ${recipeID} - this feature coming soon!`);
+        }
+
+        function showCreateRecipe() {
+            alert('Create recipe feature coming soon!');
+        }
+
+        function showInventoryPage() {
+            const content = renderInventoryPage(BrewCode);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('inventory') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+        }
+
+        function viewInventoryDetail(lotID) {
+            const content = renderInventoryDetail(BrewCode, lotID);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('inventory') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+        }
+
+        function showAddInventory() {
+            showAddInventoryForm(BrewCode);
+        }
+
+        function markInventoryExpired(lotID) {
+            if (confirm('Mark this inventory lot as expired?')) {
+                try {
+                    BrewCode.inventory.markExpired(lotID);
+                    const lot = BrewCode.inventory.getLot(lotID);
+                    if (lot) {
+                        viewInventoryDetail(lotID);
+                    } else {
+                        showInventoryPage();
+                    }
+                } catch (error) {
+                    alert(`Failed to mark as expired: ${error.message}`);
+                }
+            }
+        }
+
+        function showEquipmentPage() {
+            const content = renderEquipmentPage(BrewCode);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('equipment') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+        }
+
+        function showAddEquipment() {
+            showAddEquipmentForm(BrewCode);
+        }
+
+        function editEquipment(equipmentID) {
+            showEditEquipmentForm(equipmentID);
+        }
+
+        function showSettings() {
+            const content = renderSettingsPage(BrewCode, sessionState);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('settings') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+            attachSettingsHandlers(BrewCode, () => {
+                console.log('Settings saved!');
+            });
+        }
+
+        function loadNewDatabase() {
+            if (sessionState.hasUnsavedChanges) {
+                if (!confirm('You have unsaved changes. Load a new database anyway?')) {
+                    return;
+                }
+            }
+            loadExistingDatabase();
+        }
+
+        // Warn before leaving with unsaved changes
+        window.addEventListener('beforeunload', (e) => {
+            if (sessionState.isDatabaseLoaded && sessionState.hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = '';
+                return 'You have unsaved changes. Are you sure you want to leave?';
+            }
+        });
+
+        // Keyboard shortcut for saving (Ctrl+S or Cmd+S)
+        window.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                if (sessionState.isDatabaseLoaded && sessionState.hasUnsavedChanges) {
+                    saveDatabase();
+                }
+            }
+        });
+
+        // Expose functions globally
         window.brewcode = {
             showWelcomeScreen,
             createNewDatabase,
             loadExistingDatabase,
-            confirmDatabaseSaved
+            loadNewDatabase,
+            saveDatabase,
+            showSettings,
+            navigate,
+            toggleMobileMenu,
+            viewRecipe,
+            createBatchFromRecipe,
+            showCreateRecipe,
+            filterRecipes,
+            viewBatch,
+            startBatch,
+            completeBatch,
+            startStage,
+            completeStage,
+            filterBatches,
+            viewInventoryDetail,
+            showAddInventory,
+            markInventoryExpired,
+            toggleFilters,
+            applyInventoryFilters,
+            updateCategoryDropdown,
+            showAddInventoryForm,
+            showCreateNewItemForm,
+            backToItemSelection,
+            updateCategoryOptions,
+            updateTypeOptions,
+            toggleBrandInput,
+            showCreateTypeInline,
+            hideCreateTypeInline,
+            createTypeInline,
+            selectInventoryItem,
+            toggleCostInput,
+            updateCostCalculation,
+            showAddEquipment,
+            editEquipment,
+            filterEquipmentBySearch,
+            applyEquipmentFilters,
+            closeModal
         };
 
-        // Start app
-        window.addEventListener('load', init);
+        // Initialize app
+        window.addEventListener('load', () => {
+            showWelcomeScreen();
+        });
     </script>
+
+    <style>
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fade-out {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        .animate-fade-in { animation: fade-in 0.3s ease-out; }
+        .animate-fade-out { animation: fade-out 0.3s ease-out; }
+    </style>
 </body>
 </html>

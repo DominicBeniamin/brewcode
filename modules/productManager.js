@@ -1,4 +1,4 @@
-// productManager.js
+// ingredientManager.js
 
 import { resultToObjects, _updateActiveStatus } from './helpers.js';
 
@@ -7,195 +7,199 @@ import { resultToObjects, _updateActiveStatus } from './helpers.js';
 // ============================================
 
 /**
- * Create a new product
+ * Create a new ingredient
  * 
  * @param {Object} db - SQL.js database instance
- * @param {Object} productData - Product information
- * @param {number} productData.ingredientTypeID - Ingredient type this product belongs to (required)
- * @param {string} productData.productName - Product name (required)
- * @param {string} [productData.brandName] - Brand name (optional, NULL for homemade)
- * @param {number} [productData.packageSize] - Package size (optional)
- * @param {string} [productData.packageUnit] - Package unit (optional, e.g., "L", "kg")
- * @param {string} [productData.notes] - Additional notes (optional)
- * @returns {Object} Created product object with productID
+ * @param {Object} ingredientData - ingredient information
+ * @param {number} ingredientData.ingredientTypeID - Ingredient type this ingredient belongs to (required)
+ * @param {string} ingredientData.name - ingredient name (required)
+ * @param {string} [ingredientData.brand] - Brand name (optional, NULL for homemade)
+ * @param {number} [ingredientData.packageSize] - Package size (optional)
+ * @param {string} [ingredientData.packageUnit] - Package unit (optional, e.g., "L", "kg")
+ * @param {string} [ingredientData.notes] - Additional notes (optional)
+ * @returns {Object} Created ingredient object with ingredientID
  * @throws {Error} If validation fails
  * 
  * @example
- * // Fixed-size product
- * const product = createProduct(db, {
+ * // Fixed-size ingredient
+ * const ingredient = createingredient(db, {
  *     ingredientTypeID: 1,
- *     brandName: "K Classic",
- *     productName: "Apfel Saft",
+ *     brand: "K Classic",
+ *     name: "Apfel Saft",
  *     packageSize: 1,
  *     packageUnit: "L",
  *     notes: "Available at Kaufland"
  * });
  * 
  * @example
- * // Variable-size product (size recorded at inventory level)
- * const product = createProduct(db, {
+ * // Variable-size ingredient (size recorded at inventory level)
+ * const ingredient = createingredient(db, {
  *     ingredientTypeID: 1,
- *     brandName: "Local Farm",
- *     productName: "Fresh Pressed Apple Juice",
+ *     brand: "Local Farm",
+ *     name: "Fresh Pressed Apple Juice",
  *     notes: "From farmer's market - size varies"
  * });
  */
-function createProduct(db, productData) {
+function createingredient(db, ingredientData) {
+    console.log('ingredientManager.js - createingredient called');
+    console.log('ingredientManager.js - ingredientData:', ingredientData);
+    console.log('ingredientManager.js - ingredientData.name:', ingredientData.name);
+    
     // STEP 1: VALIDATE REQUIRED FIELDS
-    if (!productData.productName || productData.productName.trim() === '') {
-        throw new Error('Product name is required');
+    if (!ingredientData.name || ingredientData.name.trim() === '') {
+        throw new Error('ingredient name is required');
     }
     
-    if (!productData.ingredientTypeID || typeof productData.ingredientTypeID !== 'number') {
+    if (!ingredientData.ingredientTypeID || typeof ingredientData.ingredientTypeID !== 'number') {
         throw new Error('Valid ingredientTypeID is required');
     }
     
     // STEP 2: VALIDATE INGREDIENT TYPE EXISTS
     const ingredientTypeSql = `SELECT ingredientTypeID, name, isActive FROM ingredientTypes WHERE ingredientTypeID = ?`;
-    const ingredientTypeResult = db.exec(ingredientTypeSql, [productData.ingredientTypeID]);
+    const ingredientTypeResult = db.exec(ingredientTypeSql, [ingredientData.ingredientTypeID]);
     
     if (ingredientTypeResult.length === 0 || ingredientTypeResult[0].values.length === 0) {
-        throw new Error(`Ingredient type ID ${productData.ingredientTypeID} does not exist`);
+        throw new Error(`Ingredient type ID ${ingredientData.ingredientTypeID} does not exist`);
     }
     
     const ingredientTypeName = ingredientTypeResult[0].values[0][1];
     const isActive = ingredientTypeResult[0].values[0][2];
     
     if (isActive === 0) {
-        console.warn(`Creating product for inactive ingredient type: ${ingredientTypeName}`);
+        console.warn(`Creating ingredient for inactive ingredient type: ${ingredientTypeName}`);
     }
     
     // STEP 3: VALIDATE PACKAGE SIZE AND UNIT
-    if (productData.packageSize !== undefined && productData.packageSize !== null) {
-        if (typeof productData.packageSize !== 'number' || productData.packageSize <= 0) {
+    if (ingredientData.packageSize !== undefined && ingredientData.packageSize !== null) {
+        if (typeof ingredientData.packageSize !== 'number' || ingredientData.packageSize <= 0) {
             throw new Error('Package size must be a positive number');
         }
         
-        if (!productData.packageUnit || productData.packageUnit.trim() === '') {
+        if (!ingredientData.packageUnit || ingredientData.packageUnit.trim() === '') {
             throw new Error('Package unit is required when package size is provided');
         }
     }
     
     // STEP 4: PREPARE DATA
-    const product = {
-        ingredientTypeID: productData.ingredientTypeID,
-        brandName: productData.brandName?.trim() || null,
-        productName: productData.productName.trim(),
-        packageSize: productData.packageSize ?? null,
-        packageUnit: productData.packageUnit?.trim() || null,
-        notes: productData.notes?.trim() || null
+    const ingredient = {
+        ingredientTypeID: ingredientData.ingredientTypeID,
+        brand: ingredientData.brand?.trim() || null,
+        name: ingredientData.name.trim(),
+        packageSize: ingredientData.packageSize ?? null,
+        packageUnit: ingredientData.packageUnit?.trim() || null,
+        notes: ingredientData.notes?.trim() || null
     };
     
     try {
-        // STEP 5: INSERT PRODUCT
+        // STEP 5: INSERT ingredient
         const sql = `
-            INSERT INTO products (ingredientTypeID, brandName, productName, packageSize, packageUnit, notes)
+            INSERT INTO ingredients (ingredientTypeID, brand, name, packageSize, packageUnit, notes)
             VALUES (?, ?, ?, ?, ?, ?)
         `;
-        
+
         db.run(sql, [
-            product.ingredientTypeID,
-            product.brandName,
-            product.productName,
-            product.packageSize,
-            product.packageUnit,
-            product.notes
+            ingredient.ingredientTypeID,
+            ingredient.brand,
+            ingredient.name,
+            ingredient.packageSize,
+            ingredient.packageUnit,
+            ingredient.notes
         ]);
         
-        // STEP 6: GET THE NEW PRODUCT ID
-        const [[productID]] = db.exec("SELECT last_insert_rowid() as id")[0].values;
+        // STEP 6: GET THE NEW ingredient ID
+        const [[ingredientID]] = db.exec("SELECT last_insert_rowid() as id")[0].values;
         
-        console.log(`Product created successfully: ID ${productID}`);
+        console.log(`ingredient created successfully: ID ${ingredientID}`);
         
         // STEP 7: RETURN COMPLETE OBJECT
         return {
-            productID: productID,
-            ingredientTypeID: product.ingredientTypeID,
+            ingredientID: ingredientID,
+            ingredientTypeID: ingredient.ingredientTypeID,
             ingredientTypeName: ingredientTypeName,
-            brandName: product.brandName,
-            productName: product.productName,
-            packageSize: product.packageSize,
-            packageUnit: product.packageUnit,
-            notes: product.notes,
+            brand: ingredient.brand,
+            name: ingredient.name,
+            packageSize: ingredient.packageSize,
+            packageUnit: ingredient.packageUnit,
+            notes: ingredient.notes,
             isActive: 1
         };
         
     } catch (error) {
-        console.error('Failed to create product:', error.message);
-        throw new Error(`Failed to create product: ${error.message}`);
+        console.error('Failed to create ingredient:', error.message);
+        throw new Error(`Failed to create ingredient: ${error.message}`);
     }
 }
 
 /**
- * Get a single product by ID
+ * Get a single ingredient by ID
  * 
  * @param {Object} db - SQL.js database instance
- * @param {number} productID - ID of the product to retrieve
- * @returns {Object|null} Product object, or null if not found
- * @throws {Error} If productID is invalid
+ * @param {number} ingredientID - ID of the ingredient to retrieve
+ * @returns {Object|null} ingredient object, or null if not found
+ * @throws {Error} If ingredientID is invalid
  * 
  * @example
- * const product = getProduct(db, 5);
- * if (product) {
- *     console.log(product.brandName);    // "K Classic"
- *     console.log(product.productName);  // "Apfel Saft"
+ * const ingredient = getingredient(db, 5);
+ * if (ingredient) {
+ *     console.log(ingredient.brand);    // "K Classic"
+ *     console.log(ingredient.name);  // "Apfel Saft"
  * } else {
- *     console.log("Product not found");
+ *     console.log("ingredient not found");
  * }
  */
-function getProduct(db, productID) {
-    // STEP 1: VALIDATE PRODUCT ID
-    if (typeof productID !== 'number' || productID <= 0) {
-        throw new Error('Invalid product ID (must be positive number)');
+function getingredient(db, ingredientID) {
+    // STEP 1: VALIDATE ingredient ID
+    if (typeof ingredientID !== 'number' || ingredientID <= 0) {
+        throw new Error('Invalid ingredient ID (must be positive number)');
     }
     
     try {
         // STEP 2: QUERY DATABASE WITH JOIN TO GET INGREDIENT TYPE NAME
         const sql = `
             SELECT 
-                p.*,
+                i.*,
                 it.name as ingredientTypeName
-            FROM products p
-            JOIN ingredientTypes it ON p.ingredientTypeID = it.ingredientTypeID
-            WHERE p.productID = ?
+            FROM ingredients i
+            JOIN ingredientTypes it ON i.ingredientTypeID = it.ingredientTypeID
+            WHERE i.ingredientID = ?
         `;
-        const result = db.exec(sql, [productID]);
+        const result = db.exec(sql, [ingredientID]);
         
         // STEP 3: CONVERT RESULT TO OBJECT
-        const products = resultToObjects(result);
+        const ingredients = resultToObjects(result);
         
-        if (products.length === 0) {
+        if (ingredients.length === 0) {
             return null;
         }
         
-        // STEP 4: RETURN PRODUCT
-        return products[0];
+        // STEP 4: RETURN ingredient
+        return ingredients[0];
         
     } catch (error) {
-        console.error('Failed to fetch product:', error.message);
-        throw new Error(`Failed to fetch product: ${error.message}`);
+        console.error('Failed to fetch ingredient:', error.message);
+        throw new Error(`Failed to fetch ingredient: ${error.message}`);
     }
 }
 
 /**
- * Get all products for a specific ingredient type
+ * Get all ingredients for a specific ingredient type
  * 
  * @param {Object} db - SQL.js database instance
- * @param {number} ingredientTypeID - Ingredient type to get products for
+ * @param {number} ingredientTypeID - Ingredient type to get ingredients for
  * @param {Object} [options] - Filter options
  * @param {number} [options.isActive] - Filter by active status (0 or 1)
- * @returns {Array} Array of product objects
+ * @returns {Array} Array of ingredient objects
  * @throws {Error} If validation fails
  * 
  * @example
- * // Get all apple juice products
- * const appleJuices = getProductsByIngredientType(db, 1);
+ * // Get all apple juice ingredients
+ * const appleJuices = getingredientsByIngredientType(db, 1);
  * 
  * @example
- * // Get only active apple juice products
- * const activeAppleJuices = getProductsByIngredientType(db, 1, { isActive: 1 });
+ * // Get only active apple juice ingredients
+ * const activeAppleJuices = getingredientsByIngredientType(db, 1, { isActive: 1 });
  */
-function getProductsByIngredientType(db, ingredientTypeID, options = {}) {
+function getingredientsByIngredientType(db, ingredientTypeID, options = {}) {
     // STEP 1: VALIDATE INGREDIENT TYPE ID
     if (typeof ingredientTypeID !== 'number' || ingredientTypeID <= 0) {
         throw new Error('Invalid ingredient type ID (must be positive number)');
@@ -205,11 +209,11 @@ function getProductsByIngredientType(db, ingredientTypeID, options = {}) {
         // STEP 2: BUILD QUERY
         let sql = `
             SELECT 
-                p.*,
+                i.*,
                 it.name as ingredientTypeName
-            FROM products p
-            JOIN ingredientTypes it ON p.ingredientTypeID = it.ingredientTypeID
-            WHERE p.ingredientTypeID = ?
+            FROM ingredients i
+            JOIN ingredientTypes it ON i.ingredientTypeID = it.ingredientTypeID
+            WHERE i.ingredientTypeID = ?
         `;
         
         const params = [ingredientTypeID];
@@ -219,68 +223,68 @@ function getProductsByIngredientType(db, ingredientTypeID, options = {}) {
             if (options.isActive !== 0 && options.isActive !== 1) {
                 throw new Error('isActive must be 0 or 1');
             }
-            sql += ' AND p.isActive = ?';
+            sql += ' AND i.isActive = ?';
             params.push(options.isActive);
         }
         
         // STEP 4: ADD ORDERING
-        sql += ' ORDER BY p.brandName ASC, p.productName ASC';
+        sql += ' ORDER BY i.brand ASC, i.name ASC';
         
-        console.log(`Fetching products for ingredient type ${ingredientTypeID}`);
+        console.log(`Fetching ingredients for ingredient type ${ingredientTypeID}`);
         
         // STEP 5: EXECUTE QUERY
         const result = db.exec(sql, params);
-        const products = resultToObjects(result);
+        const ingredients = resultToObjects(result);
         
         // STEP 6: RETURN RESULTS
-        console.log(`Found ${products.length} products`);
-        return products;
+        console.log(`Found ${ingredients.length} ingredients`);
+        return ingredients;
         
     } catch (error) {
-        console.error('Failed to fetch products:', error.message);
-        throw new Error(`Failed to fetch products: ${error.message}`);
+        console.error('Failed to fetch ingredients:', error.message);
+        throw new Error(`Failed to fetch ingredients: ${error.message}`);
     }
 }
 
 /**
- * Get all products with optional filters
+ * Get all ingredients with optional filters
  * 
  * @param {Object} db - SQL.js database instance
  * @param {Object} [options] - Filter options
  * @param {number} [options.ingredientTypeID] - Filter by ingredient type
  * @param {number} [options.isActive] - Filter by active status (0 or 1)
- * @param {string} [options.brandName] - Filter by brand name (partial match)
- * @returns {Array} Array of product objects
+ * @param {string} [options.brand] - Filter by brand name (partial match)
+ * @returns {Array} Array of ingredient objects
  * @throws {Error} If validation fails
  * 
  * @example
- * // Get all products
- * const all = getAllProducts(db);
+ * // Get all ingredients
+ * const all = getAllingredients(db);
  * 
  * @example
- * // Get only active products
- * const active = getAllProducts(db, { isActive: 1 });
+ * // Get only active ingredients
+ * const active = getAllingredients(db, { isActive: 1 });
  * 
  * @example
- * // Get all K Classic products
- * const kClassic = getAllProducts(db, { brandName: "K Classic" });
+ * // Get all K Classic ingredients
+ * const kClassic = getAllingredients(db, { brand: "K Classic" });
  * 
  * @example
- * // Get active apple juice products
- * const activeAppleJuice = getAllProducts(db, { 
+ * // Get active apple juice ingredients
+ * const activeAppleJuice = getAllingredients(db, { 
  *     ingredientTypeID: 1, 
  *     isActive: 1 
  * });
  */
-function getAllProducts(db, options = {}) {
+function getAllingredients(db, options = {}) {
     try {
         // STEP 1: BUILD BASE QUERY WITH JOIN
         let sql = `
             SELECT 
-                p.*,
+                i.*,
                 it.name as ingredientTypeName
-            FROM products p
-            JOIN ingredientTypes it ON p.ingredientTypeID = it.ingredientTypeID
+            FROM ingredients i
+            JOIN ingredientTypes it ON i.ingredientTypeID = it.ingredientTypeID
         `;
         
         const conditions = [];
@@ -291,7 +295,7 @@ function getAllProducts(db, options = {}) {
             if (typeof options.ingredientTypeID !== 'number' || options.ingredientTypeID <= 0) {
                 throw new Error('ingredientTypeID must be a positive number');
             }
-            conditions.push('p.ingredientTypeID = ?');
+            conditions.push('i.ingredientTypeID = ?');
             params.push(options.ingredientTypeID);
         }
         
@@ -300,17 +304,17 @@ function getAllProducts(db, options = {}) {
             if (options.isActive !== 0 && options.isActive !== 1) {
                 throw new Error('isActive must be 0 or 1');
             }
-            conditions.push('p.isActive = ?');
+            conditions.push('i.isActive = ?');
             params.push(options.isActive);
         }
         
         // STEP 4: FILTER BY BRAND NAME
-        if (options.brandName !== undefined) {
-            if (typeof options.brandName !== 'string' || options.brandName.trim() === '') {
-                throw new Error('brandName must be a non-empty string');
+        if (options.brand !== undefined) {
+            if (typeof options.brand !== 'string' || options.brand.trim() === '') {
+                throw new Error('brand must be a non-empty string');
             }
-            conditions.push('p.brandName LIKE ?');
-            params.push(`%${options.brandName}%`);
+            conditions.push('i.brand LIKE ?');
+            params.push(`%${options.brand}%`);
         }
         
         // STEP 5: ADD WHERE CLAUSE IF FILTERS EXIST
@@ -319,34 +323,34 @@ function getAllProducts(db, options = {}) {
         }
         
         // STEP 6: ADD ORDERING
-        sql += ' ORDER BY it.name ASC, p.brandName ASC, p.productName ASC';
+        sql += ' ORDER BY it.name ASC, i.brand ASC, i.name ASC';
         
-        console.log(`Fetching products with query: ${sql}`);
+        console.log(`Fetching ingredients with query: ${sql}`);
         
         // STEP 7: EXECUTE QUERY
         const result = db.exec(sql, params);
-        const products = resultToObjects(result);
+        const ingredients = resultToObjects(result);
         
         // STEP 8: RETURN RESULTS
-        console.log(`Found ${products.length} products`);
-        return products;
+        console.log(`Found ${ingredients.length} ingredients`);
+        return ingredients;
         
     } catch (error) {
-        console.error('Failed to fetch products:', error.message);
-        throw new Error(`Failed to fetch products: ${error.message}`);
+        console.error('Failed to fetch ingredients:', error.message);
+        throw new Error(`Failed to fetch ingredients: ${error.message}`);
     }
 }
 
 /**
- * Update a product
+ * Update a ingredient
  * 
  * Updates only the provided fields. Other fields remain unchanged.
  * 
  * @param {Object} db - SQL.js database instance
- * @param {number} productID - Product to update
+ * @param {number} ingredientID - ingredient to update
  * @param {Object} updates - Fields to update
- * @param {string} [updates.brandName] - New brand name
- * @param {string} [updates.productName] - New product name
+ * @param {string} [updates.brand] - New brand name
+ * @param {string} [updates.name] - New ingredient name
  * @param {number} [updates.ingredientTypeID] - New ingredient type
  * @param {number} [updates.packageSize] - New package size
  * @param {string} [updates.packageUnit] - New package unit
@@ -355,29 +359,29 @@ function getAllProducts(db, options = {}) {
  * @throws {Error} If validation fails
  * 
  * @example
- * const result = updateProduct(db, 5, {
+ * const result = updateingredient(db, 5, {
  *     packageSize: 5,
  *     packageUnit: "L",
  *     notes: "Now available in 5L boxes"
  * });
  */
-function updateProduct(db, productID, updates) {
-    // STEP 1: VALIDATE PRODUCT ID
-    if (typeof productID !== 'number' || productID <= 0) {
-        throw new Error('Invalid product ID (must be positive number)');
+function updateingredient(db, ingredientID, updates) {
+    // STEP 1: VALIDATE ingredient ID
+    if (typeof ingredientID !== 'number' || ingredientID <= 0) {
+        throw new Error('Invalid ingredient ID (must be positive number)');
     }
     
-    // STEP 2: CHECK IF PRODUCT EXISTS
-    const product = getProduct(db, productID);
-    if (!product) {
-        throw new Error(`Product ID ${productID} does not exist`);
+    // STEP 2: CHECK IF ingredient EXISTS
+    const ingredient = getingredient(db, ingredientID);
+    if (!ingredient) {
+        throw new Error(`ingredient ID ${ingredientID} does not exist`);
     }
     
     // STEP 3: VALIDATE FIELDS
     
-    // Validate productName (if provided)
-    if ('productName' in updates && (!updates.productName || updates.productName.trim() === '')) {
-        throw new Error('Product name cannot be empty');
+    // Validate name (if provided)
+    if ('name' in updates && (!updates.name || updates.name.trim() === '')) {
+        throw new Error('ingredient name cannot be empty');
     }
     
     // Validate ingredientTypeID (if provided)
@@ -409,14 +413,14 @@ function updateProduct(db, productID, updates) {
             }
         } else {
             // packageSize provided but packageUnit not in updates - check existing
-            if (!product.packageUnit) {
+            if (!ingredient.packageUnit) {
                 throw new Error('Package unit is required when package size is provided');
             }
         }
     }
     
     // STEP 4: FILTER TO ALLOWED FIELDS
-    const allowedFields = ['brandName', 'productName', 'ingredientTypeID', 'packageSize', 'packageUnit', 'notes'];
+    const allowedFields = ['brand', 'name', 'ingredientTypeID', 'packageSize', 'packageUnit', 'notes'];
     
     const filteredUpdates = {};
     const unauthorizedFields = [];
@@ -442,7 +446,7 @@ function updateProduct(db, productID, updates) {
     const values = [];
     
     for (const [key, value] of Object.entries(filteredUpdates)) {
-        if (key === 'brandName' || key === 'productName' || key === 'packageUnit' || key === 'notes') {
+        if (key === 'brand' || key === 'name' || key === 'packageUnit' || key === 'notes') {
             // String fields - trim or set to null
             setClauses.push(`${key} = ?`);
             values.push(value ? value.trim() : null);
@@ -454,19 +458,19 @@ function updateProduct(db, productID, updates) {
         }
     }
     
-    const sql = `UPDATE products SET ${setClauses.join(', ')} WHERE productID = ?`;
-    values.push(productID);
+    const sql = `UPDATE ingredients SET ${setClauses.join(', ')} WHERE ingredientID = ?`;
+    values.push(ingredientID);
     
     try {
         // STEP 6: EXECUTE UPDATE
         db.run(sql, values);
         
-        console.log(`Product ${productID} updated successfully`);
+        console.log(`ingredient ${ingredientID} updated successfully`);
         
         // STEP 7: RETURN SUCCESS
         return {
             success: true,
-            message: `Product "${product.productName}" updated successfully`,
+            message: `ingredient "${ingredient.name}" updated successfully`,
             updatedFields: Object.entries(filteredUpdates).map(([key, value]) => ({
                 field: key,
                 newValue: value
@@ -474,32 +478,32 @@ function updateProduct(db, productID, updates) {
         };
         
     } catch (error) {
-        console.error('Failed to update product:', error.message);
-        throw new Error(`Failed to update product: ${error.message}`);
+        console.error('Failed to update ingredient:', error.message);
+        throw new Error(`Failed to update ingredient: ${error.message}`);
     }
 }
 
 /**
- * Set product active status
+ * Set ingredient active status
  * 
  * @param {Object} db - SQL.js database instance
- * @param {number} productID - Product to update
+ * @param {number} ingredientID - ingredient to update
  * @param {number} isActive - New status (1 = active, 0 = inactive)
  * @returns {Object} { success: boolean, message: string }
  * @throws {Error} If validation fails
  * 
  * @example
- * // Deactivate a product
- * setProductStatus(db, 5, 0);
+ * // Deactivate a ingredient
+ * setingredientStatus(db, 5, 0);
  * 
  * @example
- * // Reactivate a product
- * setProductStatus(db, 5, 1);
+ * // Reactivate a ingredient
+ * setingredientStatus(db, 5, 1);
  */
-function setProductStatus(db, productID, isActive) {
-    // STEP 1: VALIDATE PRODUCT ID
-    if (typeof productID !== 'number' || productID <= 0) {
-        throw new Error('Invalid product ID (must be positive number)');
+function setingredientStatus(db, ingredientID, isActive) {
+    // STEP 1: VALIDATE ingredient ID
+    if (typeof ingredientID !== 'number' || ingredientID <= 0) {
+        throw new Error('Invalid ingredient ID (must be positive number)');
     }
     
     // STEP 2: VALIDATE isActive
@@ -507,45 +511,45 @@ function setProductStatus(db, productID, isActive) {
         throw new Error('isActive must be 0 or 1');
     }
     
-    // STEP 3: CHECK IF PRODUCT EXISTS
-    const product = getProduct(db, productID);
-    if (!product) {
-        throw new Error(`Product ID ${productID} does not exist`);
+    // STEP 3: CHECK IF ingredient EXISTS
+    const ingredient = getingredient(db, ingredientID);
+    if (!ingredient) {
+        throw new Error(`ingredient ID ${ingredientID} does not exist`);
     }
     
     // STEP 4: CHECK IF ALREADY AT DESIRED STATUS
-    if (product.isActive === isActive) {
+    if (ingredient.isActive === isActive) {
         const status = isActive === 1 ? 'active' : 'inactive';
         return {
             success: true,
-            message: `Product "${product.productName}" is already ${status}`
+            message: `ingredient "${ingredient.name}" is already ${status}`
         };
     }
     
     try {
         // STEP 5: UPDATE STATUS
-        _updateActiveStatus(db, 'products', 'productID', productID, isActive);
+        _updateActiveStatus(db, 'ingredients', 'ingredientID', ingredientID, isActive);
         
         const status = isActive === 1 ? 'activated' : 'deactivated';
-        console.log(`Product "${product.productName}" ${status}`);
+        console.log(`ingredient "${ingredient.name}" ${status}`);
         
         // STEP 6: RETURN SUCCESS
         return {
             success: true,
-            message: `Product "${product.productName}" ${status} successfully`
+            message: `ingredient "${ingredient.name}" ${status} successfully`
         };
         
     } catch (error) {
-        console.error('Failed to update product status:', error.message);
-        throw new Error(`Failed to update product status: ${error.message}`);
+        console.error('Failed to update ingredient status:', error.message);
+        throw new Error(`Failed to update ingredient status: ${error.message}`);
     }
 }
 
 export {
-    createProduct,
-    getProduct,
-    getProductsByIngredientType,
-    getAllProducts,
-    updateProduct,
-    setProductStatus
+    createingredient,
+    getingredient,
+    getingredientsByIngredientType,
+    getAllingredients,
+    updateingredient,
+    setingredientStatus
 };

@@ -12,8 +12,8 @@ import { resultToObjects, _updateActiveStatus } from './helpers.js';
  * @param {Object} db - SQL.js database instance
  * @param {Object} supplyData - Supply information
  * @param {number} supplyData.supplyTypeID - Supply type this belongs to (required)
- * @param {string} supplyData.productName - Product name (required)
- * @param {string} [supplyData.brandName] - Brand name (optional)
+ * @param {string} supplyData.name - Product name (required)
+ * @param {string} [supplyData.brand] - Brand name (optional)
  * @param {number} [supplyData.packageSize] - Package size (optional)
  * @param {string} [supplyData.packageUnit] - Package unit (optional)
  * @param {string} [supplyData.notes] - Additional notes (optional)
@@ -21,7 +21,7 @@ import { resultToObjects, _updateActiveStatus } from './helpers.js';
  * @throws {Error} If validation fails
  */
 function createSupply(db, supplyData) {
-    if (!supplyData.productName || supplyData.productName.trim() === '') {
+    if (!supplyData.name || supplyData.name.trim() === '') {
         throw new Error('Product name is required');
     }
     
@@ -55,8 +55,8 @@ function createSupply(db, supplyData) {
     
     const supply = {
         supplyTypeID: supplyData.supplyTypeID,
-        brandName: supplyData.brandName?.trim() || null,
-        productName: supplyData.productName.trim(),
+        brandName: supplyData.brand?.trim() || null,
+        name: supplyData.name.trim(),
         packageSize: supplyData.packageSize ?? null,
         packageUnit: supplyData.packageUnit?.trim() || null,
         notes: supplyData.notes?.trim() || null
@@ -64,14 +64,14 @@ function createSupply(db, supplyData) {
     
     try {
         const sql = `
-            INSERT INTO supplies (supplyTypeID, brandName, productName, packageSize, packageUnit, notes)
+            INSERT INTO supplies (supplyTypeID, brandName, name, packageSize, packageUnit, notes)
             VALUES (?, ?, ?, ?, ?, ?)
         `;
         
         db.run(sql, [
             supply.supplyTypeID,
-            supply.brandName,
-            supply.productName,
+            supply.brand,
+            supply.name,
             supply.packageSize,
             supply.packageUnit,
             supply.notes
@@ -85,8 +85,8 @@ function createSupply(db, supplyData) {
             supplyID: supplyID,
             supplyTypeID: supply.supplyTypeID,
             supplyTypeName: supplyTypeName,
-            brandName: supply.brandName,
-            productName: supply.productName,
+            brandName: supply.brand,
+            name: supply.name,
             packageSize: supply.packageSize,
             packageUnit: supply.packageUnit,
             notes: supply.notes,
@@ -159,7 +159,7 @@ function getSuppliesBySupplyType(db, supplyTypeID, options = {}) {
             params.push(options.isActive);
         }
         
-        sql += ' ORDER BY s.brandName ASC, s.productName ASC';
+        sql += ' ORDER BY s.brand ASC, s.name ASC';
         
         console.log(`Fetching supplies for supply type ${supplyTypeID}`);
         
@@ -207,19 +207,19 @@ function getAllSupplies(db, options = {}) {
             params.push(options.isActive);
         }
         
-        if (options.brandName !== undefined) {
-            if (typeof options.brandName !== 'string' || options.brandName.trim() === '') {
+        if (options.brand !== undefined) {
+            if (typeof options.brand !== 'string' || options.brand.trim() === '') {
                 throw new Error('brandName must be a non-empty string');
             }
-            conditions.push('s.brandName LIKE ?');
-            params.push(`%${options.brandName}%`);
+            conditions.push('s.brand LIKE ?');
+            params.push(`%${options.brand}%`);
         }
         
         if (conditions.length > 0) {
             sql += ' WHERE ' + conditions.join(' AND ');
         }
         
-        sql += ' ORDER BY st.name ASC, s.brandName ASC, s.productName ASC';
+        sql += ' ORDER BY st.name ASC, s.brand ASC, s.name ASC';
         
         console.log(`Fetching supplies with query: ${sql}`);
         
@@ -248,7 +248,7 @@ function updateSupply(db, supplyID, updates) {
         throw new Error(`Supply ID ${supplyID} does not exist`);
     }
     
-    if ('productName' in updates && (!updates.productName || updates.productName.trim() === '')) {
+    if ('name' in updates && (!updates.name || updates.name.trim() === '')) {
         throw new Error('Product name cannot be empty');
     }
     
@@ -282,7 +282,7 @@ function updateSupply(db, supplyID, updates) {
         }
     }
     
-    const allowedFields = ['brandName', 'productName', 'supplyTypeID', 'packageSize', 'packageUnit', 'notes'];
+    const allowedFields = ['brandName', 'name', 'supplyTypeID', 'packageSize', 'packageUnit', 'notes'];
     
     const filteredUpdates = {};
     const unauthorizedFields = [];
@@ -307,7 +307,7 @@ function updateSupply(db, supplyID, updates) {
     const values = [];
     
     for (const [key, value] of Object.entries(filteredUpdates)) {
-        if (key === 'brandName' || key === 'productName' || key === 'packageUnit' || key === 'notes') {
+        if (key === 'brandName' || key === 'name' || key === 'packageUnit' || key === 'notes') {
             setClauses.push(`${key} = ?`);
             values.push(value ? value.trim() : null);
         } else {
@@ -326,7 +326,7 @@ function updateSupply(db, supplyID, updates) {
         
         return {
             success: true,
-            message: `Supply "${supply.productName}" updated successfully`,
+            message: `Supply "${supply.name}" updated successfully`,
             updatedFields: Object.entries(filteredUpdates).map(([key, value]) => ({
                 field: key,
                 newValue: value
@@ -360,7 +360,7 @@ function setSupplyStatus(db, supplyID, isActive) {
         const status = isActive === 1 ? 'active' : 'inactive';
         return {
             success: true,
-            message: `Supply "${supply.productName}" is already ${status}`
+            message: `Supply "${supply.name}" is already ${status}`
         };
     }
     
@@ -368,11 +368,11 @@ function setSupplyStatus(db, supplyID, isActive) {
         _updateActiveStatus(db, 'supplies', 'supplyID', supplyID, isActive);
         
         const status = isActive === 1 ? 'activated' : 'deactivated';
-        console.log(`Supply "${supply.productName}" ${status}`);
+        console.log(`Supply "${supply.name}" ${status}`);
         
         return {
             success: true,
-            message: `Supply "${supply.productName}" ${status} successfully`
+            message: `Supply "${supply.name}" ${status} successfully`
         };
         
     } catch (error) {

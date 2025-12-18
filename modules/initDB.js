@@ -14,17 +14,45 @@ async function initDb() {
 
     console.log("Empty database created.");
 
-    // Step 3: Load schema from file
+// Step 3: Load schema from file
     console.log("Loading schema...");
-    const response = await fetch('../database/schema.sql');
-    const schemaSql = await response.text();
+    let schemaSql;
+    
+    try {
+        // Try multiple possible paths for schema.sql
+        const paths = [
+            '../database/schema.sql',  // Original path
+            './database/schema.sql',   // Relative to current directory
+            '/database/schema.sql',    // Root relative
+            './schema.sql'             // Same directory
+        ];
+        
+        let loaded = false;
+        for (const path of paths) {
+            try {
+                const response = await fetch(path);
+                if (response.ok) {
+                    schemaSql = await response.text();
+                    console.log(`Schema loaded from: ${path}`);
+                    loaded = true;
+                    break;
+                }
+            } catch (e) {
+                // Try next path
+            }
+        }
+        
+        if (!loaded) {
+            throw new Error('Schema file not found in any location');
+        }
+    } catch (error) {
+        throw new Error('Failed to load schema.sql. Please ensure it is accessible at ../database/schema.sql');
+    }
     
     console.log("Schema loaded. Executing SQL...");
     
     // Step 4: Execute schema to create tables
     db.exec(schemaSql);
-    
-    console.log("Database schema applied successfully!");
     
     return db;
 };

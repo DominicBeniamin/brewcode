@@ -8,7 +8,6 @@ import * as recipeManager from './recipeManager.js';
 import * as equipmentManager from './equipmentManager.js';
 import * as inventoryManager from './inventoryManager.js';
 import * as ingredientManager from './ingredientManager.js';
-import * as productManager from './productManager.js';
 import * as supplyManager from './supplyManager.js';
 import * as supplyTypeManager from './supplyTypeManager.js';
 import * as conversions from './conversions.js';
@@ -304,6 +303,10 @@ query(sql, params = []) {
             return batchManager.recordIngredientUsage(this.db, batchIngredientID, usageData);
         },
 
+        // ============================================
+        // INGREDIENT TYPE METHODS (generic types)
+        // ============================================
+        
         /**
          * Create ingredient type
          */
@@ -342,6 +345,60 @@ query(sql, params = []) {
         setTypeStatus: (ingredientTypeID, isActive) => {
             this._requireInit();
             return ingredientManager.setIngredientTypeStatus(this.db, ingredientTypeID, isActive);
+        },
+
+        // ============================================
+        // INGREDIENT METHODS (specific branded items)
+        // ============================================
+
+        /**
+         * Create ingredient
+         */
+        create: (ingredientData) => {
+            this._requireInit();
+            console.log('brewcode.js - ingredient.create called with:', ingredientData);
+            console.log('brewcode.js - ingredientData.ingredientName:', ingredientData.ingredientName);
+            return ingredientManager.createIngredient(this.db, ingredientData);
+        },
+
+        /**
+         * Get ingredient by ID
+         */
+        get: (ingredientID) => {
+            this._requireInit();
+            return ingredientManager.getIngredient(this.db, ingredientID);
+        },
+
+        /**
+         * Get ingredients by ingredient type
+         */
+        getByType: (ingredientTypeID, options = {}) => {
+            this._requireInit();
+            return ingredientManager.getIngredientsByIngredientType(this.db, ingredientTypeID, options);
+        },
+
+        /**
+         * Get all ingredients
+         */
+        getAll: (options = {}) => {
+            this._requireInit();
+            return ingredientManager.getAllIngredients(this.db, options);
+        },
+
+        /**
+         * Update ingredient
+         */
+        update: (ingredientID, updates) => {
+            this._requireInit();
+            return ingredientManager.updateIngredient(this.db, ingredientID, updates);
+        },
+
+        /**
+         * Set ingredient active status
+         */
+        setStatus: (ingredientID, isActive) => {
+            this._requireInit();
+            return ingredientManager.setIngredientStatus(this.db, ingredientID, isActive);
         }
     };
 
@@ -569,11 +626,11 @@ query(sql, params = []) {
         },
 
         /**
-         * Get inventory for a product (FIFO ordered)
+         * Get inventory for a ingredient (FIFO ordered)
          */
-        getForProduct: (productID, options = {}) => {
+        getForIngredient: (ingredientID, options = {}) => {
             this._requireInit();
-            return inventoryManager.getInventoryForProduct(this.db, productID, options);
+            return inventoryManager.getInventoryForIngredient(this.db, ingredientID, options);
         },
 
         /**
@@ -587,9 +644,9 @@ query(sql, params = []) {
         /**
          * Consume from inventory (FIFO)
          */
-        consume: (productID, quantity, unit) => {
+        consume: (ingredientID, quantity, unit) => {
             this._requireInit();
-            return inventoryManager.consumeFromInventory(this.db, productID, quantity, unit);
+            return inventoryManager.consumeFromInventory(this.db, ingredientID, quantity, unit);
         },
 
         /**
@@ -606,60 +663,6 @@ query(sql, params = []) {
         getHistory: (options = {}) => {
             this._requireInit();
             return inventoryManager.getInventoryHistory(this.db, options);
-        }
-    };
-
-    // ============================================
-    // PRODUCT MANAGEMENT
-    // ============================================
-
-    product = {
-        /**
-         * Create product
-         */
-        create: (productData) => {
-            this._requireInit();
-            return productManager.createProduct(this.db, productData);
-        },
-
-        /**
-         * Get product by ID
-         */
-        get: (productID) => {
-            this._requireInit();
-            return productManager.getProduct(this.db, productID);
-        },
-
-        /**
-         * Get products by ingredient type
-         */
-        getByType: (ingredientTypeID, options = {}) => {
-            this._requireInit();
-            return productManager.getProductsByIngredientType(this.db, ingredientTypeID, options);
-        },
-
-        /**
-         * Get all products
-         */
-        getAll: (options = {}) => {
-            this._requireInit();
-            return productManager.getAllProducts(this.db, options);
-        },
-
-        /**
-         * Update product
-         */
-        update: (productID, updates) => {
-            this._requireInit();
-            return productManager.updateProduct(this.db, productID, updates);
-        },
-
-        /**
-         * Set product active status
-         */
-        setStatus: (productID, isActive) => {
-            this._requireInit();
-            return productManager.setProductStatus(this.db, productID, isActive);
         }
     };
 

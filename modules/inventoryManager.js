@@ -9,13 +9,13 @@ import { resultToObjects } from './helpers.js';
 /**
  * Add a new inventory lot
  * 
- * Records a purchase or acquisition of a product or supply.
- * Exactly one of productID or supplyID must be provided.
+ * Records a purchase or acquisition of a ingredient or supply.
+ * Exactly one of ingredientID or supplyID must be provided.
  * 
  * @param {Object} db - SQL.js database instance
  * @param {Object} lotData - Lot information
- * @param {number} [lotData.productID] - Product ID (required if not supply)
- * @param {number} [lotData.supplyID] - Supply ID (required if not product)
+ * @param {number} [lotData.ingredientID] - Ingredient ID (required if not supply)
+ * @param {number} [lotData.supplyID] - Supply ID (required if not ingredient)
  * @param {number} lotData.quantityPurchased - Amount purchased (required)
  * @param {string} lotData.unit - Unit of measure (required, e.g., "kg", "L")
  * @param {string} lotData.purchaseDate - Purchase date ISO 8601 (required, YYYY-MM-DD)
@@ -28,7 +28,7 @@ import { resultToObjects } from './helpers.js';
  * 
  * @example
  * const lot = addInventoryLot(db, {
- *     productID: 5,
+ *     ingredientID: 5,
  *     quantityPurchased: 10,
  *     unit: "kg",
  *     purchaseDate: "2025-11-23",
@@ -40,7 +40,7 @@ import { resultToObjects } from './helpers.js';
 function addInventoryLot(db, lotData) {
     // STEP 1: DESTRUCTURE WITH DEFAULTS
     const {
-        productID,
+        ingredientID,
         supplyID,
         quantityPurchased,
         unit,
@@ -51,9 +51,9 @@ function addInventoryLot(db, lotData) {
         notes = null
     } = lotData;
     
-    // STEP 2: VALIDATE EXACTLY ONE OF productID OR supplyID
-    if ((!productID && !supplyID) || (productID && supplyID)) {
-        throw new Error("Either productID or supplyID must be provided, but not both");
+    // STEP 2: VALIDATE EXACTLY ONE OF ingredientID OR supplyID
+    if ((!ingredientID && !supplyID) || (ingredientID && supplyID)) {
+        throw new Error("Either ingredientID or supplyID must be provided, but not both");
     }
     
     // STEP 3: VALIDATE QUANTITY
@@ -88,18 +88,18 @@ function addInventoryLot(db, lotData) {
         throw new Error('Cost per unit must be a non-negative number or null');
     }
     
-    // STEP 8: VALIDATE PRODUCT OR SUPPLY EXISTS
-    if (productID) {
-        const productSql = `SELECT productID, productName FROM products WHERE productID = ?`;
-        const productResult = db.exec(productSql, [productID]);
+    // STEP 8: VALIDATE INGREDIENT OR SUPPLY EXISTS
+    if (ingredientID) {
+        const ingredientSql = `SELECT ingredientID, name FROM ingredients WHERE ingredientID = ?`;
+        const ingredientResult = db.exec(ingredientSql, [ingredientID]);
         
-        if (productResult.length === 0 || productResult[0].values.length === 0) {
-            throw new Error(`Product ID ${productID} does not exist`);
+        if (ingredientResult.length === 0 || ingredientResult[0].values.length === 0) {
+            throw new Error(`Ingredient ID ${ingredientID} does not exist`);
         }
     }
     
     if (supplyID) {
-        const supplySql = `SELECT supplyID, productName FROM supplies WHERE supplyID = ?`;
+        const supplySql = `SELECT supplyID, name FROM supplies WHERE supplyID = ?`;
         const supplyResult = db.exec(supplySql, [supplyID]);
         
         if (supplyResult.length === 0 || supplyResult[0].values.length === 0) {
@@ -109,7 +109,7 @@ function addInventoryLot(db, lotData) {
 
         // STEP 9: PREPARE LOT DATA
     const lot = {
-        productID: productID || null,
+        ingredientID: ingredientID || null,
         supplyID: supplyID || null,
         quantityPurchased: quantityPurchased,
         quantityRemaining: quantityPurchased,  // Initially same as purchased
@@ -126,14 +126,14 @@ function addInventoryLot(db, lotData) {
         // STEP 10: INSERT LOT
         const sql = `
             INSERT INTO inventoryLots (
-                productID, supplyID, quantityPurchased, quantityRemaining, 
+                ingredientID, supplyID, quantityPurchased, quantityRemaining, 
                 unit, purchaseDate, expirationDate, costPerUnit, supplier, notes, status
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         
         db.run(sql, [
-            lot.productID,
+            lot.ingredientID,
             lot.supplyID,
             lot.quantityPurchased,
             lot.quantityRemaining,
@@ -154,7 +154,7 @@ function addInventoryLot(db, lotData) {
         // STEP 12: RETURN COMPLETE OBJECT
         return {
             lotID: lotID,
-            productID: lot.productID,
+            ingredientID: lot.ingredientID,
             supplyID: lot.supplyID,
             quantityPurchased: lot.quantityPurchased,
             quantityRemaining: lot.quantityRemaining,
@@ -201,13 +201,13 @@ function getInventoryLot(db, lotID) {
         const sql = `
             SELECT 
                 il.*,
-                p.productName as productName,
-                p.brandName as brandName,
+                p.name as name,
+                p.brand as brand,
                 it.name as ingredientTypeName,
-                s.productName as supplyName,
+                s.name as supplyName,
                 st.name as supplyTypeName
             FROM inventoryLots il
-            LEFT JOIN products p ON il.productID = p.productID
+            LEFT JOIN ingredients p ON il.ingredientID = p.ingredientID
             LEFT JOIN ingredientTypes it ON p.ingredientTypeID = it.ingredientTypeID
             LEFT JOIN supplies s ON il.supplyID = s.supplyID
             LEFT JOIN supplyTypes st ON s.supplyTypeID = st.supplyTypeID
@@ -233,13 +233,13 @@ function getInventoryLot(db, lotID) {
 }
 
 /**
- * Get all inventory lots for a specific product (FIFO ordered)
+ * Get all inventory lots for a specific ingredient (FIFO ordered)
  * 
  * Returns lots ordered by purchase date (oldest first) for FIFO consumption.
  * By default, only returns active lots with remaining quantity.
  * 
  * @param {Object} db - SQL.js database instance
- * @param {number} productID - Product to get inventory for
+ * @param {number} ingredientID - Ingredient to get inventory for
  * @param {Object} [options] - Filter options
  * @param {string} [options.status] - Filter by status ('active', 'consumed', 'expired')
  * @param {boolean} [options.includeEmpty] - Include lots with quantityRemaining = 0 (default: false)
@@ -248,20 +248,20 @@ function getInventoryLot(db, lotID) {
  * 
  * @example
  * // Get available inventory for apple juice (FIFO ordered)
- * const lots = getInventoryForProduct(db, 5);
+ * const lots = getInventoryForIngredient(db, 5);
  * // Returns only active lots with remaining quantity, oldest first
  * 
  * @example
  * // Get all lots including consumed ones
- * const allLots = getInventoryForProduct(db, 5, { 
+ * const allLots = getInventoryForIngredient(db, 5, { 
  *     status: null,  // Don't filter by status
  *     includeEmpty: true 
  * });
  */
-function getInventoryForProduct(db, productID, options = {}) {
-    // STEP 1: VALIDATE PRODUCT ID
-    if (typeof productID !== 'number' || productID <= 0) {
-        throw new Error('Invalid product ID (must be positive number)');
+function getInventoryForIngredient(db, ingredientID, options = {}) {
+    // STEP 1: VALIDATE INGREDIENT ID
+    if (typeof ingredientID !== 'number' || ingredientID <= 0) {
+        throw new Error('Invalid ingredient ID (must be positive number)');
     }
     
     try {
@@ -269,16 +269,16 @@ function getInventoryForProduct(db, productID, options = {}) {
         let sql = `
             SELECT 
                 il.*,
-                p.productName,
-                p.brandName,
+                p.name,
+                p.brand,
                 it.name as ingredientTypeName
             FROM inventoryLots il
-            JOIN products p ON il.productID = p.productID
+            JOIN ingredients p ON il.ingredientID = p.ingredientID
             JOIN ingredientTypes it ON p.ingredientTypeID = it.ingredientTypeID
-            WHERE il.productID = ?
+            WHERE il.ingredientID = ?
         `;
         
-        const params = [productID];
+        const params = [ingredientID];
         
         // STEP 3: FILTER BY STATUS (default: active only)
         if (options.status !== undefined && options.status !== null) {
@@ -302,7 +302,7 @@ function getInventoryForProduct(db, productID, options = {}) {
         // STEP 5: ORDER BY PURCHASE DATE (FIFO - oldest first)
         sql += ' ORDER BY il.purchaseDate ASC, il.lotID ASC';
         
-        console.log(`Fetching inventory for product ${productID}`);
+        console.log(`Fetching inventory for ingredient ${ingredientID}`);
         
         // STEP 6: EXECUTE QUERY
         const result = db.exec(sql, params);
@@ -323,7 +323,7 @@ function getInventoryForProduct(db, productID, options = {}) {
  * 
  * @param {Object} db - SQL.js database instance
  * @param {Object} [options] - Filter options
- * @param {number} [options.productID] - Filter by product
+ * @param {number} [options.ingredientID] - Filter by ingredient
  * @param {number} [options.supplyID] - Filter by supply
  * @param {string} [options.status] - Filter by status ('active', 'consumed', 'expired')
  * @param {boolean} [options.includeEmpty] - Include lots with quantityRemaining = 0 (default: false)
@@ -344,9 +344,9 @@ function getInventoryForProduct(db, productID, options = {}) {
  * });
  * 
  * @example
- * // Get all consumed product inventory
+ * // Get all consumed ingredient inventory
  * const consumed = getAllInventory(db, {
- *     productID: 5,
+ *     ingredientID: 5,
  *     status: 'consumed',
  *     includeEmpty: true
  * });
@@ -357,13 +357,13 @@ function getAllInventory(db, options = {}) {
         let sql = `
             SELECT 
                 il.*,
-                p.productName,
-                p.brandName,
+                p.name,
+                p.brand,
                 it.name as ingredientTypeName,
-                s.productName as supplyName,
+                s.name as supplyName,
                 st.name as supplyTypeName
             FROM inventoryLots il
-            LEFT JOIN products p ON il.productID = p.productID
+            LEFT JOIN ingredients p ON il.ingredientID = p.ingredientID
             LEFT JOIN ingredientTypes it ON p.ingredientTypeID = it.ingredientTypeID
             LEFT JOIN supplies s ON il.supplyID = s.supplyID
             LEFT JOIN supplyTypes st ON s.supplyTypeID = st.supplyTypeID
@@ -372,13 +372,13 @@ function getAllInventory(db, options = {}) {
         const conditions = [];
         const params = [];
         
-        // STEP 2: FILTER BY PRODUCT
-        if (options.productID !== undefined) {
-            if (typeof options.productID !== 'number' || options.productID <= 0) {
-                throw new Error('productID must be a positive number');
+        // STEP 2: FILTER BY INGREDIENT
+        if (options.ingredientID !== undefined) {
+            if (typeof options.ingredientID !== 'number' || options.ingredientID <= 0) {
+                throw new Error('ingredientID must be a positive number');
             }
-            conditions.push('il.productID = ?');
-            params.push(options.productID);
+            conditions.push('il.ingredientID = ?');
+            params.push(options.ingredientID);
         }
         
         // STEP 3: FILTER BY SUPPLY
@@ -428,7 +428,7 @@ function getAllInventory(db, options = {}) {
         }
         
         // STEP 8: ORDER BY TYPE, THEN FIFO
-        sql += ' ORDER BY il.productID ASC, il.supplyID ASC, il.purchaseDate ASC, il.lotID ASC';
+        sql += ' ORDER BY il.ingredientID ASC, il.supplyID ASC, il.purchaseDate ASC, il.lotID ASC';
         
         console.log(`Fetching inventory with query: ${sql}`);
         
@@ -453,7 +453,7 @@ function getAllInventory(db, options = {}) {
  * the oldest lots first. Updates lot quantities and marks fully consumed lots.
  * 
  * @param {Object} db - SQL.js database instance
- * @param {number} productID - Product to consume from
+ * @param {number} ingredientID - Ingredient to consume from
  * @param {number} quantityNeeded - Amount to consume
  * @param {string} unit - Unit of measure (must match inventory lots)
  * @returns {Object} Consumption details (lots used, total cost, etc.)
@@ -462,10 +462,10 @@ function getAllInventory(db, options = {}) {
  * @example
  * const result = consumeFromInventory(db, 5, 6.0, "kg");
  */
-function consumeFromInventory(db, productID, quantityNeeded, unit) {
+function consumeFromInventory(db, ingredientID, quantityNeeded, unit) {
     // STEP 1: VALIDATE INPUTS
-    if (typeof productID !== 'number' || productID <= 0) {
-        throw new Error('Invalid product ID (must be positive number)');
+    if (typeof ingredientID !== 'number' || ingredientID <= 0) {
+        throw new Error('Invalid ingredient ID (must be positive number)');
     }
     
     if (typeof quantityNeeded !== 'number' || quantityNeeded <= 0) {
@@ -479,12 +479,12 @@ function consumeFromInventory(db, productID, quantityNeeded, unit) {
     const unitNormalized = unit.trim();
     
     // STEP 2: GET AVAILABLE INVENTORY (FIFO ORDERED)
-    const availableLots = getInventoryForProduct(db, productID, {
+    const availableLots = getInventoryForIngredient(db, ingredientID, {
         status: 'active'
     });
     
     if (availableLots.length === 0) {
-        throw new Error(`No inventory available for product ID ${productID}`);
+        throw new Error(`No inventory available for ingredient ID ${ingredientID}`);
     }
     
     // STEP 3: VALIDATE UNIT MATCHES
@@ -603,8 +603,8 @@ function markLotExpired(db, lotID) {
         const sql = `UPDATE inventoryLots SET status = 'expired' WHERE lotID = ?`;
         db.run(sql, [lotID]);
         
-        const itemName = lot.productID 
-            ? `${lot.brandName} ${lot.productName}` 
+        const itemName = lot.ingredientID 
+            ? `${lot.brand} ${lot.ingredientName}` 
             : lot.supplyName;
         
         console.log(`Lot ${lotID} (${itemName}) marked as expired`);
@@ -628,7 +628,7 @@ function markLotExpired(db, lotID) {
  * 
  * @param {Object} db - SQL.js database instance
  * @param {Object} [options] - Filter options
- * @param {number} [options.productID] - Filter by product
+ * @param {number} [options.ingredientID] - Filter by ingredient
  * @param {number} [options.supplyID] - Filter by supply
  * @param {string} [options.status] - Filter by status ('consumed' or 'expired')
  * @returns {Array} Array of historical lot objects
@@ -641,7 +641,7 @@ function markLotExpired(db, lotID) {
  * @example
  * // Get all expired apple juice lots
  * const expired = getInventoryHistory(db, { 
- *     productID: 5, 
+ *     ingredientID: 5, 
  *     status: 'expired' 
  * });
  */
@@ -651,13 +651,13 @@ function getInventoryHistory(db, options = {}) {
         let sql = `
             SELECT 
                 il.*,
-                p.productName,
-                p.brandName,
+                p.name,
+                p.brand,
                 it.name as ingredientTypeName,
-                s.productName as supplyName,
+                s.name as supplyName,
                 st.name as supplyTypeName
             FROM inventoryLots il
-            LEFT JOIN products p ON il.productID = p.productID
+            LEFT JOIN ingredients p ON il.ingredientID = p.ingredientID
             LEFT JOIN ingredientTypes it ON p.ingredientTypeID = it.ingredientTypeID
             LEFT JOIN supplies s ON il.supplyID = s.supplyID
             LEFT JOIN supplyTypes st ON s.supplyTypeID = st.supplyTypeID
@@ -666,13 +666,13 @@ function getInventoryHistory(db, options = {}) {
         
         const params = [];
         
-        // STEP 2: FILTER BY PRODUCT
-        if (options.productID !== undefined) {
-            if (typeof options.productID !== 'number' || options.productID <= 0) {
-                throw new Error('productID must be a positive number');
+        // STEP 2: FILTER BY INGREDIENT
+        if (options.ingredientID !== undefined) {
+            if (typeof options.ingredientID !== 'number' || options.ingredientID <= 0) {
+                throw new Error('ingredientID must be a positive number');
             }
-            sql += ' AND il.productID = ?';
-            params.push(options.productID);
+            sql += ' AND il.ingredientID = ?';
+            params.push(options.ingredientID);
         }
         
         // STEP 3: FILTER BY SUPPLY
@@ -716,7 +716,7 @@ function getInventoryHistory(db, options = {}) {
 export {
     addInventoryLot,
     getInventoryLot,
-    getInventoryForProduct,
+    getInventoryForIngredient,
     getAllInventory,
     consumeFromInventory,
     markLotExpired,
