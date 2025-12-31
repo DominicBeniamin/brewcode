@@ -229,6 +229,20 @@ function formatDuration(days) {
 }
 
 /**
+ * Format currency according to user settings
+ * @param {number} amount - Amount to format
+ * @param {Object} settings - User settings object
+ * @returns {string} Formatted currency with symbol
+ * 
+ * @example
+ * formatCurrency(19.99, settings); // "€19.99" or "$19.99" or "£19.99"
+ */
+function formatCurrency(amount, settings) {
+    const symbol = settings.currencySymbol || '€';
+    return `${symbol}${amount.toFixed(2)}`;
+}
+
+/**
  * Get all format functions with settings pre-applied
  * @param {Object} settings - User settings object
  * @returns {Object} Object with all format functions
@@ -248,7 +262,8 @@ function getFormatters(settings) {
         time: (value) => formatTime(value, settings),
         datetime: (value) => formatDateTime(value, settings),
         abv: (value) => formatABV(value),
-        duration: (value) => formatDuration(value)
+        duration: (value) => formatDuration(value),
+        currency: (value) => formatCurrency(value, settings)
     };
 }
 
@@ -262,5 +277,6 @@ export {
     formatDateTime,
     formatABV,
     formatDuration,
+    formatCurrency,
     getFormatters
 };

@@ -184,7 +184,7 @@ function renderSettingsPage(BrewCode, sessionState = null) {
                         </div>
 
                         <!-- Theme -->
-                        <div class="mb-8">
+                        <div class="mb-6">
                             <label class="block text-sm font-semibold text-gray-300 mb-2">
                                 Theme
                             </label>
@@ -202,6 +202,22 @@ function renderSettingsPage(BrewCode, sessionState = null) {
                                     Auto (System)
                                 </option>
                             </select>
+                        </div>
+
+                        <!-- Currency Symbol -->
+                        <div class="mb-8">
+                            <label class="block text-sm font-semibold text-gray-300 mb-2">
+                                Currency Symbol
+                            </label>
+                            <input 
+                                type="text"
+                                name="currencySymbol"
+                                maxlength="3"
+                                value="${settings.currencySymbol || '€'}"
+                                placeholder="e.g., $, €, £, kr, CHF"
+                                class="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-amber-500 focus:outline-none"
+                            />
+                            <p class="text-xs text-gray-500 mt-1">Symbol used for displaying costs and prices (1-3 characters)</p>
                         </div>
 
                         <!-- Success Message -->
@@ -264,7 +280,8 @@ function attachSettingsHandlers(BrewCode, onSave) {
             densityUnit: formData.get('densityUnit'),
             dateFormat: formData.get('dateFormat'),
             timeFormat: formData.get('timeFormat'),
-            theme: formData.get('theme')
+            theme: formData.get('theme'),
+            currencySymbol: formData.get('currencySymbol')
         };
 
         try {

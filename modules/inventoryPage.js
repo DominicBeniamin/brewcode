@@ -1,7 +1,8 @@
-// inventoryPage.js
+// inventoryPage.js - Item-focused inventory management
 
 import { getFormatters } from './formatHelpers.js';
-import { renderResponsiveFilters, renderFilterDropdown } from './filterHelpers.js';
+import { renderEmptyState } from './uiHelpers.js';
+import { toggleDropdown, renderMultiSelectDropdown, handleMultiSelectAll, renderFilterDropdown } from './filterHelpers.js';
 
 /**
  * Render inventory page
@@ -9,289 +10,365 @@ import { renderResponsiveFilters, renderFilterDropdown } from './filterHelpers.j
  * @returns {string} HTML for inventory page
  */
 function renderInventoryPage(BrewCode) {
-    const inventory = BrewCode.inventory.getAll({ status: 'active' });
     const settings = BrewCode.settings.get();
     const fmt = getFormatters(settings);
-
-    if (inventory.length === 0) {
-        return `
-            <div class="mb-6">
-                <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-3xl font-bold text-white">Ingredients & Supplies</h2>
-                    <button 
-                        onclick="window.brewcode.showAddInventory()"
-                        class="bg-amber-600 hover:bg-amber-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-                    >
-                        + Add Inventory
-                    </button>
-                </div>
-
-                <!-- Inventory Stats (Empty State) -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div class="bg-green-900/20 border border-green-500 rounded-lg p-4">
-                        <div class="text-2xl font-bold text-green-400">0</div>
-                        <div class="text-sm text-gray-400">Ingredients</div>
-                    </div>
-                    <div class="bg-blue-900/20 border border-blue-500 rounded-lg p-4">
-                        <div class="text-2xl font-bold text-blue-400">0</div>
-                        <div class="text-sm text-gray-400">Supplies</div>
-                    </div>
-                    <div class="bg-amber-900/20 border border-amber-500 rounded-lg p-4">
-                        <div class="text-2xl font-bold text-amber-400">0</div>
-                        <div class="text-sm text-gray-400">Total Lots</div>
-                    </div>
-                    <div class="bg-purple-900/20 border border-purple-500 rounded-lg p-4">
-                        <div class="text-2xl font-bold text-purple-400">$0.00</div>
-                        <div class="text-sm text-gray-400">Total Value</div>
-                    </div>
-                </div>
-
-                <!-- Search Bar -->
-                <div class="mb-6">
-                    <input 
-                        type="text"
-                        id="inventorySearch"
-                        placeholder="Search inventory by name or type..."
-                        disabled
-                        class="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-amber-500 focus:outline-none opacity-50"
-                    />
-                </div>
-
-                <!-- Filter Dropdowns -->
-                ${renderResponsiveFilters('inventoryFilters', `
-                    ${renderFilterDropdown({
-                        id: 'inv-filter-type',
-                        label: 'Item Type',
-                        onChange: 'window.brewcode.applyInventoryFilters()',
-                        options: [
-                            { value: 'all', label: `All (${inventory.length})` },
-                            { value: 'ingredients', label: 'Ingredients' },
-                            { value: 'supplies', label: 'Supplies' }
-                        ]
-                    })}
-                    
-                    ${renderFilterDropdown({
-                        id: 'inv-filter-stock',
-                        label: 'Stock Level',
-                        onChange: 'window.brewcode.applyInventoryFilters()',
-                        options: [
-                            { value: 'all', label: 'All' },
-                            { value: 'in-stock', label: 'In Stock' },
-                            { value: 'low-stock', label: 'Low Stock (< 25%)' },
-                            { value: 'out-of-stock', label: 'Out of Stock' }
-                        ]
-                    })}
-                    
-                    ${renderFilterDropdown({
-                        id: 'inv-filter-category',
-                        label: 'Category',
-                        onChange: 'window.brewcode.applyInventoryFilters()',
-                        options: [
-                            { value: 'all', label: 'All Categories' }
-                        ]
-                    })}
-                `)}
-
-            <!-- Empty State Message -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-12 text-center">
-                <div class="text-6xl mb-4">📦</div>
-                <h3 class="text-2xl font-bold text-white mb-2">No Inventory Yet</h3>
-                <p class="text-gray-400 mb-6 max-w-md mx-auto">
-                    Start tracking your ingredients and supplies. Monitor quantities, expiration dates, and costs.
-                </p>
-                <button 
-                    onclick="window.brewcode.showAddInventory()"
-                    class="bg-amber-600 hover:bg-amber-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-                >
-                    + Add Your First Inventory
-                </button>
-            </div>
-        `;
+    
+    // Get ALL items with their lots (including on-demand items)
+    const items = getAllItemsWithInventory(BrewCode);
+    
+    if (items.length === 0) {
+        return renderInventoryEmpty(BrewCode);
     }
 
-    // Group by ingredient/supply
-    const ingredients = inventory.filter(item => item.ingredientID !== null);
-    const supplies = inventory.filter(item => item.supplyID !== null);
-
-    // Calculate totals
-    const totalValue = inventory.reduce((sum, item) => {
-        return sum + ((item.costPerUnit || 0) * item.quantityRemaining);
+    // Calculate stats
+    const lowStockCount = items.filter(item => {
+        const result = isItemLowStock(item);
+        console.log(`Item: ${item.name}, onDemand: ${item.onDemand}, reorderPoint: ${item.reorderPoint}, totalRemaining: ${item.lots.reduce((s, l) => s + l.quantityRemaining, 0)}, isLowStock: ${result}`);
+        return result;
+    }).length;
+    const expiringCount = items.filter(item => isItemExpiringSoon(item)).length;
+    const totalValue = items.reduce((sum, item) => {
+        return sum + item.lots.reduce((lotSum, lot) => {
+            return lotSum + ((lot.costPerUnit || 0) * lot.quantityRemaining);
+        }, 0);
     }, 0);
+
+    // Get unique categories and types
+    const categories = new Set();
+    const types = new Set();
+    items.forEach(item => {
+        if (item.categoryName) categories.add(item.categoryName);
+        if (item.typeName) types.add(item.typeName);
+    });
+    const sortedCategories = Array.from(categories).sort();
+    const sortedTypes = Array.from(types).sort();
 
     return `
         <div class="mb-6">
             <div class="flex justify-between items-center mb-6">
                 <h2 class="text-3xl font-bold text-white">Inventory</h2>
                 <button 
-                    onclick="window.brewcode.showAddInventory()"
+                    onclick="window.brewcode.showCreateItemFormWrapper()"
                     class="bg-amber-600 hover:bg-amber-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
                 >
-                    + Add Inventory
+                    + Add Item
                 </button>
             </div>
 
-            <!-- Inventory Stats -->
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div class="bg-green-900/20 border border-green-500 rounded-lg p-4">
-                    <div class="text-2xl font-bold text-green-400">${ingredients.length}</div>
-                    <div class="text-sm text-gray-400">Ingredients</div>
+            <!-- Top Stats -->
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-red-900/20 border border-red-500 rounded-lg p-4">
+                    <div class="text-2xl font-bold text-red-400">${lowStockCount}</div>
+                    <div class="text-sm text-gray-400">Low Stock</div>
                 </div>
-                <div class="bg-blue-900/20 border border-blue-500 rounded-lg p-4">
-                    <div class="text-2xl font-bold text-blue-400">${supplies.length}</div>
-                    <div class="text-sm text-gray-400">Supplies</div>
-                </div>
-                <div class="bg-amber-900/20 border border-amber-500 rounded-lg p-4">
-                    <div class="text-2xl font-bold text-amber-400">${inventory.length}</div>
-                    <div class="text-sm text-gray-400">Total Lots</div>
+                <div class="bg-orange-900/20 border border-orange-500 rounded-lg p-4">
+                    <div class="text-2xl font-bold text-orange-400">${expiringCount}</div>
+                    <div class="text-sm text-gray-400">Expiring Soon</div>
                 </div>
                 <div class="bg-purple-900/20 border border-purple-500 rounded-lg p-4">
-                    <div class="text-2xl font-bold text-purple-400">$${totalValue.toFixed(2)}</div>
+                    <div class="text-2xl font-bold text-purple-400">${fmt.currency(0)}</div>
                     <div class="text-sm text-gray-400">Total Value</div>
                 </div>
             </div>
 
-            <!-- Filter Tabs -->
-            <div class="mb-6 flex gap-2">
-                <button 
-                    onclick="window.brewcode.filterInventory('all')"
-                    id="inv-filter-all"
-                    class="px-4 py-2 rounded-lg bg-amber-600 text-white font-medium"
-                >
-                    All (${inventory.length})
-                </button>
-                <button 
-                    onclick="window.brewcode.filterInventory('ingredients')"
-                    id="inv-filter-ingredients"
-                    class="px-4 py-2 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 font-medium"
-                >
-                    Ingredients (${ingredients.length})
-                </button>
-                <button 
-                    onclick="window.brewcode.filterInventory('supplies')"
-                    id="inv-filter-supplies"
-                    class="px-4 py-2 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 font-medium"
-                >
-                    Supplies (${supplies.length})
-                </button>
+            <!-- Search Bar -->
+            <div class="mb-6">
+                <input 
+                    type="text"
+                    id="inventorySearch"
+                    placeholder="Search inventory..."
+                    onkeyup="window.brewcode.applyInventoryFilters()"
+                    class="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-amber-500 focus:outline-none"
+                />
             </div>
-        </div>
 
-        <!-- Inventory List -->
-        <div class="space-y-4" id="inventoryList">
-            ${inventory.map(item => renderInventoryCard(item, fmt)).join('')}
+            <!-- Filter Toggle Button (visible on small screens) -->
+            <button 
+                id="filterToggleBtn"
+                onclick="window.brewcode.toggleFilters()"
+                class="md:hidden w-full bg-gray-700 hover:bg-gray-600 text-white px-4 py-3 rounded-lg transition-colors mb-4 flex items-center justify-center gap-2"
+            >
+                <span>Filters</span>
+                <span id="filterToggleIcon">▼</span>
+            </button>
+
+            <!-- Filter Dropdowns -->
+            <div id="filterContainer" class="mb-6 flex-wrap gap-3 hidden md:flex">
+                ${renderFilterDropdown({
+                    id: 'inventorySortBy',
+                    label: '',
+                    onChange: 'window.brewcode.applyInventoryFilters()',
+                    options: [
+                        { value: 'name-asc', label: 'Name, A-Z' },
+                        { value: 'name-desc', label: 'Name, Z-A' },
+                        { value: 'stock-low', label: 'Stock, Low to High' },
+                        { value: 'stock-high', label: 'Stock, High to Low' }
+                    ],
+                    defaultValue: 'name-asc'
+                })}
+                
+                ${renderMultiSelectDropdown({
+                    id: 'itemRoleDropdown',
+                    label: 'Item Role',
+                    options: [
+                        { value: 'ingredient', label: 'Ingredients' },
+                        { value: 'supply', label: 'Supplies' },
+                        { value: 'dual', label: 'Dual Purpose' }
+                    ],
+                    onChange: 'window.brewcode.applyInventoryFilters'
+                })}
+                
+                ${renderMultiSelectDropdown({
+                    id: 'categoryDropdown',
+                    label: 'Categories',
+                    options: sortedCategories.map(cat => ({ value: cat, label: cat })),
+                    onChange: 'window.brewcode.applyInventoryFilters'
+                })}
+                
+                ${renderMultiSelectDropdown({
+                    id: 'typeDropdown',
+                    label: 'Types',
+                    options: sortedTypes.map(type => ({ value: type, label: type })),
+                    onChange: 'window.brewcode.applyInventoryFilters'
+                })}
+                
+                ${renderMultiSelectDropdown({
+                    id: 'stockStatusDropdown',
+                    label: 'Stock Status',
+                    options: [
+                        { value: 'in-stock', label: 'In Stock' },
+                        { value: 'low-stock', label: 'Low Stock' },
+                        { value: 'out-of-stock', label: 'Out of Stock' },
+                        { value: 'on-demand', label: 'On Demand' },
+                        { value: 'expiring-soon', label: 'Expiring Soon' }
+                    ],
+                    onChange: 'window.brewcode.applyInventoryFilters',
+                    includeAll: true
+                })}
+            </div>
+
+            <!-- Inventory List -->
+            <div class="space-y-4" id="inventoryList">
+                ${items.map(item => renderInventoryCard(item, fmt)).join('')}
+            </div>
         </div>
     `;
 }
 
 /**
- * Render inventory item card
- * @param {Object} item - Inventory lot object
- * @param {Object} fmt - Formatters object
- * @returns {string} HTML for inventory card
+ * Get all items with their inventory lots
+ * Includes on-demand items (which have no lots)
  */
-function renderInventoryCard(item, fmt) {
-    const isIngredient = item.ingredientID !== null;
-    const itemType = isIngredient ? 'ingredient' : 'supply';
-    const name = isIngredient ? 
-        `${item.brand ? item.brand + ' ' : ''}${item.name}` : 
-        item.supplyName;
-    const typeName = isIngredient ? item.ingredientTypeName : item.supplyTypeName;
-
-    // Calculate percentage remaining
-    const percentRemaining = (item.quantityRemaining / item.quantityPurchased) * 100;
+function getAllItemsWithInventory(BrewCode) {
+    // DEBUG: Check what's in the database
+    const debugItems = BrewCode.query("SELECT itemID, name, reorderPoint, onDemand FROM items WHERE name LIKE '%71B%' OR name LIKE '%Potassium%'");
+    console.log('DEBUG - Items from database:', debugItems);
     
-    // Determine bar color based on percentage
-    let barColor = 'bg-green-500';
-    if (percentRemaining < 25) barColor = 'bg-red-500';
-    else if (percentRemaining < 50) barColor = 'bg-yellow-500';
+    const itemsQuery = `
+        SELECT 
+            i.*,
+            ir_ing.roleType as ingredientRole,
+            it.ingredientTypeID,
+            it.name as ingredientTypeName,
+            ic_ing.categoryID as ingredientCategoryID,
+            ic_ing.name as ingredientCategoryName,
+            ir_sup.roleType as supplyRole,
+            st.supplyTypeID,
+            st.name as supplyTypeName,
+            ic_sup.categoryID as supplyCategoryID,
+            ic_sup.name as supplyCategoryName
+        FROM items i
+        LEFT JOIN itemRoles ir_ing ON i.itemID = ir_ing.itemID AND ir_ing.roleType = 'ingredient'
+        LEFT JOIN ingredientTypes it ON ir_ing.itemTypeID = it.ingredientTypeID
+        LEFT JOIN itemCategories ic_ing ON ir_ing.categoryID = ic_ing.categoryID
+        LEFT JOIN itemRoles ir_sup ON i.itemID = ir_sup.itemID AND ir_sup.roleType = 'supply'
+        LEFT JOIN supplyTypes st ON ir_sup.itemTypeID = st.supplyTypeID
+        LEFT JOIN itemCategories ic_sup ON ir_sup.categoryID = ic_sup.categoryID
+        WHERE i.isActive = 1
+        ORDER BY i.name ASC
+    `;
+    
+    const itemsResult = BrewCode.query(itemsQuery);
+    const lots = BrewCode.inventory.getAll({ status: 'active' });
+    
+    const lotsByItem = {};
+    lots.forEach(lot => {
+        if (!lotsByItem[lot.itemID]) {
+            lotsByItem[lot.itemID] = [];
+        }
+        lotsByItem[lot.itemID].push(lot);
+    });
+    
+    const items = itemsResult.map(item => {
+        const itemLots = lotsByItem[item.itemID] || [];
+        const typeName = item.ingredientTypeName || item.supplyTypeName;
+        const categoryName = item.ingredientCategoryName || item.supplyCategoryName;
+        
+        let earliestExpiration = null;
+        itemLots.forEach(lot => {
+            if (lot.expirationDate) {
+                if (!earliestExpiration || new Date(lot.expirationDate) < new Date(earliestExpiration)) {
+                    earliestExpiration = lot.expirationDate;
+                }
+            }
+        });
+        
+        return {
+            itemID: item.itemID,
+            name: item.name,
+            brand: item.brand,
+            unit: item.unit,
+            isIngredient: item.ingredientRole === 'ingredient',
+            isSupply: item.supplyRole === 'supply',
+            typeName: typeName,
+            categoryName: categoryName,
+            reorderPoint: item.reorderPoint,
+            onDemand: item.onDemand,
+            onDemandPrice: item.onDemandPrice,
+            onDemandPriceQty: item.onDemandPriceQty,
+            earliestExpiration: earliestExpiration,
+            lots: itemLots
+        };
+    });
+    
+    return items;
+}
 
-    // Check if expiring soon (within 30 days)
-    const isExpiringSoon = item.expirationDate && 
-        new Date(item.expirationDate) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+function renderInventoryEmpty(BrewCode) {
+    return `
+        <div class="mb-6">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-3xl font-bold text-white">Inventory</h2>
+                <button 
+                    onclick="window.brewcode.showCreateItemFormWrapper()"
+                    class="bg-amber-600 hover:bg-amber-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                >
+                    + Add Item
+                </button>
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-red-900/20 border border-red-500 rounded-lg p-4">
+                    <div class="text-2xl font-bold text-red-400">0</div>
+                    <div class="text-sm text-gray-400">Low Stock</div>
+                </div>
+                <div class="bg-orange-900/20 border border-orange-500 rounded-lg p-4">
+                    <div class="text-2xl font-bold text-orange-400">0</div>
+                    <div class="text-sm text-gray-400">Expiring Soon</div>
+                </div>
+                <div class="bg-purple-900/20 border border-purple-500 rounded-lg p-4">
+                    <div class="text-2xl font-bold text-purple-400">$0.00</div>
+                    <div class="text-sm text-gray-400">Total Value</div>
+                </div>
+            </div>
+        </div>
+
+        ${renderEmptyState({
+            icon: '📦',
+            title: 'No Inventory Yet',
+            description: 'Start tracking your ingredients and supplies.',
+            buttonLabel: '+ Add Item',
+            buttonAction: 'window.brewcode.showCreateItemFormWrapper()'
+        })}
+    `;
+}
+
+function renderInventoryCard(item, fmt) {
+    const totalRemaining = item.lots.reduce((sum, lot) => sum + lot.quantityRemaining, 0);
+    const totalPurchased = item.lots.reduce((sum, lot) => sum + lot.quantityPurchased, 0);
+    const percentRemaining = totalPurchased > 0 ? (totalRemaining / totalPurchased) * 100 : 0;
+    
+    const isLowStock = isItemLowStock(item);
+    const isExpiringSoon = isItemExpiringSoon(item);
+    const isOnDemand = item.onDemand === 1;
+    const isOutOfStock = !isOnDemand && totalRemaining === 0;
+
+    let stockStatus = 'in-stock';
+    if (isOnDemand) stockStatus = 'on-demand';
+    else if (isOutOfStock) stockStatus = 'out-of-stock';
+    else if (isLowStock) stockStatus = 'low-stock';
+    
+    const additionalStatuses = [];
+    if (isExpiringSoon) additionalStatuses.push('expiring-soon');
+
+    let barColor = 'bg-green-500';
+    if (isOutOfStock) barColor = 'bg-gray-500';
+    else if (isLowStock) barColor = 'bg-red-500';
+    else if (percentRemaining < 25) barColor = 'bg-orange-500';
+    else if (percentRemaining < 50) barColor = 'bg-yellow-500';
 
     return `
         <div 
             class="bg-gray-800 rounded-lg border border-gray-700 p-6 hover:shadow-lg transition-shadow"
-            data-inventory-type="${itemType}"
-            data-percent-remaining="${percentRemaining}"
-            data-category="${typeName}"
+            data-item-id="${item.itemID}"
+            data-item-role="${item.isIngredient && item.isSupply ? 'dual' : item.isIngredient ? 'ingredient' : 'supply'}"
+            data-item-category="${item.categoryName || ''}"
+            data-item-type="${item.typeName || ''}"
+            data-is-low-stock="${isLowStock}"
+            data-is-on-demand="${isOnDemand}"
+            data-stock-status="${stockStatus}"
+            data-stock-level="${totalRemaining}"
+            data-additional-status="${additionalStatuses.join(',')}"
+            data-search-text="${(item.name + ' ' + (item.brand || '') + ' ' + (item.typeName || '')).toLowerCase()}"
         >
             <div class="flex justify-between items-start mb-4">
-                <div class="flex-1">
-                    <h3 class="text-lg font-bold text-white mb-1">${name}</h3>
-                    <div class="text-sm text-gray-400 mb-2">${typeName}</div>
-                    
-                    ${isExpiringSoon ? `
-                        <div class="inline-block bg-red-900/30 text-red-300 text-xs px-2 py-1 rounded mb-2">
-                            ⚠️ Expires ${fmt.date(item.expirationDate)}
-                        </div>
-                    ` : ''}
+                <div class="flex-1 cursor-pointer" onclick="window.brewcode.viewInventoryDetail('${item.itemID}')">
+                    <h3 class="text-lg font-bold text-white">
+                        ${item.brand ? `<span class="text-gray-400">${item.brand}</span> ` : ''}${item.name}
+                    </h3>
+                    <p class="text-sm text-gray-400">${item.typeName || 'Uncategorized'}</p>
                 </div>
-                
-                <div class="text-right">
-                    <div class="text-2xl font-bold text-white mb-1">
-                        ${item.quantityRemaining.toFixed(1)} ${item.unit}
-                    </div>
-                    <div class="text-xs text-gray-500">
-                        of ${item.quantityPurchased.toFixed(1)} ${item.unit}
-                    </div>
-                </div>
+                <button 
+                    onclick="event.stopPropagation(); window.brewcode.showEditItem(${item.itemID})"
+                    class="bg-gray-700 hover:bg-gray-600 text-white text-sm py-2 px-4 rounded transition-colors"
+                >
+                    Edit
+                </button>
             </div>
 
-            <!-- Progress Bar -->
-            <div class="mb-4">
-                <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
-                    <div class="${barColor} h-full transition-all" style="width: ${percentRemaining}%"></div>
-                </div>
-            </div>
-
-            <!-- Details Grid -->
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                    <div class="text-gray-400">Purchased</div>
-                    <div class="text-white">${fmt.date(item.purchaseDate)}</div>
-                </div>
-                ${item.expirationDate ? `
-                    <div>
-                        <div class="text-gray-400">Expires</div>
-                        <div class="text-white">${fmt.date(item.expirationDate)}</div>
-                    </div>
-                ` : '<div></div>'}
-                ${item.supplier ? `
-                    <div>
-                        <div class="text-gray-400">Supplier</div>
-                        <div class="text-white">${item.supplier}</div>
-                    </div>
-                ` : '<div></div>'}
-                ${item.costPerUnit ? `
-                    <div>
-                        <div class="text-gray-400">Cost/Unit</div>
-                        <div class="text-white">$${item.costPerUnit.toFixed(2)}/${item.unit}</div>
-                    </div>
-                ` : '<div></div>'}
-            </div>
-
-            ${item.notes ? `
-                <div class="mt-4 pt-4 border-t border-gray-700">
-                    <div class="text-xs text-gray-400 mb-1">Notes:</div>
-                    <div class="text-sm text-gray-300">${item.notes}</div>
+            ${isLowStock || isOutOfStock || isExpiringSoon ? `
+                <div class="flex flex-wrap gap-2 mb-4">
+                    ${isLowStock ? `<span class="bg-red-900/40 text-red-300 text-xs px-2 py-1 rounded">Low Stock</span>` : ''}
+                    ${isOutOfStock ? `<span class="bg-gray-900/40 text-gray-300 text-xs px-2 py-1 rounded">Out of Stock</span>` : ''}
+                    ${isExpiringSoon ? `<span class="bg-orange-900/40 text-orange-300 text-xs px-2 py-1 rounded">Expiring Soon</span>` : ''}
                 </div>
             ` : ''}
 
-            <!-- Actions -->
-            <div class="mt-4 pt-4 border-t border-gray-700 flex gap-2">
-                <button 
-                    onclick="window.brewcode.viewInventoryDetail(${item.lotID})"
-                    class="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-sm py-2 px-4 rounded transition-colors"
-                >
-                    View Details
-                </button>
-                ${isExpiringSoon || percentRemaining === 0 ? `
+            <div class="flex justify-between items-end">
+                <div class="flex flex-col gap-2">
+                    ${isOnDemand ? `
+                        <div class="text-xl font-bold text-blue-400">On Demand</div>
+                        ${item.onDemandPrice ? `<div class="text-xs text-gray-500">${fmt.currency(item.onDemandPrice)} / ${item.onDemandPriceQty} ${item.unit}</div>` : ''}
+                    ` : `
+                        <div class="text-2xl font-bold text-white flex items-center gap-2">
+                            ${totalRemaining.toFixed(1)} ${item.unit}
+                            ${(isLowStock || isOutOfStock) ? `<span class="text-yellow-400 text-xl" title="${isOutOfStock ? 'Out of stock' : 'Low stock'}">⚠️</span>` : ''}
+                        </div>
+                    `}
+                    <div class="grid grid-cols-2 gap-3 text-sm text-gray-400">
+                        ${item.reorderPoint !== null && !isOnDemand ? `
+                            <div>
+                                <span class="text-gray-500">Reorder:</span> ${item.reorderPoint} ${item.unit}
+                            </div>
+                        ` : ''}
+                        ${item.earliestExpiration ? `
+                            <div>
+                                <span class="text-gray-500">Expires:</span> ${fmt.date(item.earliestExpiration)}
+                            </div>
+                        ` : ''}
+                        ${item.lots.length > 0 ? `
+                            <div>
+                                <span class="text-gray-500">Lots:</span> ${item.lots.length}
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+                ${!isOnDemand ? `
                     <button 
-                        onclick="window.brewcode.markInventoryExpired(${item.lotID})"
-                        class="bg-red-700 hover:bg-red-600 text-white text-sm py-2 px-4 rounded transition-colors"
+                        onclick="event.stopPropagation(); window.brewcode.showAddLotForm(${item.itemID})"
+                        class="bg-amber-600 hover:bg-amber-700 text-white text-sm py-2 px-4 rounded transition-colors whitespace-nowrap"
                     >
-                        Mark Expired
+                        + Add Lot
                     </button>
                 ` : ''}
             </div>
@@ -299,40 +376,181 @@ function renderInventoryCard(item, fmt) {
     `;
 }
 
-/**
- * Render inventory detail view
- * @param {Object} BrewCode - BrewCode API instance
- * @param {number} lotID - Lot ID to display
- * @returns {string} HTML for inventory detail
- */
-function renderInventoryDetail(BrewCode, lotID) {
-    const lot = BrewCode.inventory.getLot(lotID);
+function isItemLowStock(item) {
+    // Don't count on-demand items as low stock
+    if (item.onDemand === 1) return false;
+    
+    // Only items with a reorder point can be low stock
+    if (item.reorderPoint === null) return false;
+    
+    const totalRemaining = item.lots.reduce((sum, lot) => sum + lot.quantityRemaining, 0);
+    
+    // Item is low stock if it's at or below reorder point (includes zero/out of stock)
+    return totalRemaining <= item.reorderPoint;
+}
+
+function isItemExpiringSoon(item) {
+    if (!item.earliestExpiration) return false;
+    const expirationDate = new Date(item.earliestExpiration);
+    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    return expirationDate < thirtyDaysFromNow;
+}
+
+function applyInventoryFilters() {
+    const searchText = document.getElementById('inventorySearch')?.value.toLowerCase() || '';
+    const sortBy = document.getElementById('inventorySortBy')?.value || 'name-asc';
+    
+    const itemRoleCheckboxes = document.querySelectorAll('#itemRoleDropdown input[type="checkbox"]:checked');
+    const categoryCheckboxes = document.querySelectorAll('#categoryDropdown input[type="checkbox"]:checked');
+    const typeCheckboxes = document.querySelectorAll('#typeDropdown input[type="checkbox"]:checked');
+    const stockStatusCheckboxes = document.querySelectorAll('#stockStatusDropdown input[type="checkbox"]:checked');
+    
+    const selectedRoles = Array.from(itemRoleCheckboxes).map(cb => cb.value);
+    const selectedCategories = Array.from(categoryCheckboxes).map(cb => cb.value);
+    const selectedTypes = Array.from(typeCheckboxes).map(cb => cb.value);
+    const selectedStockStatuses = Array.from(stockStatusCheckboxes).map(cb => cb.value);
+    
+    const cards = Array.from(document.querySelectorAll('[data-item-id]'));
+    
+    // If no cards exist, return early
+    if (cards.length === 0) return;
+    
+    cards.forEach(card => {
+        let visible = true;
+        
+        if (searchText && !card.dataset.searchText.includes(searchText)) {
+            visible = false;
+        }
+        
+        // Only apply role filter if there are selections AND "all" is not selected
+        if (selectedRoles.length > 0 && !selectedRoles.includes('all')) {
+            const itemRole = card.dataset.itemRole;
+            if (!selectedRoles.includes(itemRole)) {
+                visible = false;
+            }
+        }
+        
+        // Only apply category filter if there are selections AND "all" is not selected
+        if (selectedCategories.length > 0 && !selectedCategories.includes('all')) {
+            if (!selectedCategories.includes(card.dataset.itemCategory)) {
+                visible = false;
+            }
+        }
+        
+        // Only apply type filter if there are selections AND "all" is not selected
+        if (selectedTypes.length > 0 && !selectedTypes.includes('all')) {
+            if (!selectedTypes.includes(card.dataset.itemType)) {
+                visible = false;
+            }
+        }
+        
+        // Only apply stock status filter if there are selections AND "all-stock" is not selected
+        if (selectedStockStatuses.length > 0 && !selectedStockStatuses.includes('all-stock') && !selectedStockStatuses.includes('all')) {
+            const stockStatus = card.dataset.stockStatus;
+            const additionalStatuses = card.dataset.additionalStatus.split(',').filter(s => s);
+            const allStatuses = [stockStatus, ...additionalStatuses];
+            
+            const matchesStatus = selectedStockStatuses.some(status => allStatuses.includes(status));
+            if (!matchesStatus) {
+                visible = false;
+            }
+        }
+        
+        card.style.display = visible ? 'block' : 'none';
+    });
+    
+    const visibleCards = cards.filter(card => card.style.display !== 'none');
+    const parent = cards[0]?.parentElement;
+    
+    if (parent && visibleCards.length > 0) {
+        visibleCards.sort((a, b) => {
+            const aStock = parseFloat(a.dataset.stockLevel) || 0;
+            const bStock = parseFloat(b.dataset.stockLevel) || 0;
+            
+            switch(sortBy) {
+                case 'name-asc': {
+                    const aName = a.dataset.searchText || '';
+                    const bName = b.dataset.searchText || '';
+                    return aName.localeCompare(bName);
+                }
+                case 'name-desc': {
+                    const aName = a.dataset.searchText || '';
+                    const bName = b.dataset.searchText || '';
+                    return bName.localeCompare(aName);
+                }
+                case 'stock-low':
+                    return aStock - bStock;
+                case 'stock-high':
+                    return bStock - aStock;
+                default:
+                    return 0;
+            }
+        });
+        
+        visibleCards.forEach(card => parent.appendChild(card));
+    }
+}
+
+function toggleFilters() {
+    const filterContainer = document.getElementById('filterContainer');
+    const filterToggleIcon = document.getElementById('filterToggleIcon');
+    
+    if (filterContainer.classList.contains('hidden')) {
+        filterContainer.classList.remove('hidden');
+        filterContainer.classList.add('flex');
+        filterToggleIcon.textContent = '▲';
+    } else {
+        filterContainer.classList.add('hidden');
+        filterContainer.classList.remove('flex');
+        filterToggleIcon.textContent = '▼';
+    }
+}
+
+function renderInventoryDetail(BrewCode, itemID) {
     const settings = BrewCode.settings.get();
     const fmt = getFormatters(settings);
-
-    if (!lot) {
+    
+    const itemQuery = `
+        SELECT 
+            i.*,
+            ir_ing.roleType as ingredientRole,
+            it.name as ingredientTypeName,
+            ir_sup.roleType as supplyRole,
+            st.name as supplyTypeName
+        FROM items i
+        LEFT JOIN itemRoles ir_ing ON i.itemID = ir_ing.itemID AND ir_ing.roleType = 'ingredient'
+        LEFT JOIN ingredientTypes it ON ir_ing.itemTypeID = it.ingredientTypeID
+        LEFT JOIN itemRoles ir_sup ON i.itemID = ir_sup.itemID AND ir_sup.roleType = 'supply'
+        LEFT JOIN supplyTypes st ON ir_sup.itemTypeID = st.supplyTypeID
+        WHERE i.itemID = ?
+    `;
+    
+    const itemResult = BrewCode.query(itemQuery, [itemID]);
+    
+    if (itemResult.length === 0) {
         return `
             <div class="text-center py-12">
-                <h2 class="text-2xl font-bold text-red-500 mb-4">Inventory Not Found</h2>
+                <h2 class="text-2xl font-bold text-red-500 mb-4">Item Not Found</h2>
                 <button 
                     onclick="window.brewcode.navigate('inventory')"
                     class="bg-gray-700 hover:bg-gray-600 text-white py-2 px-6 rounded-lg"
                 >
-                    ← Back to Inventory
+                    ← Back
                 </button>
             </div>
         `;
     }
-
-    const isIngredient = lot.ingredientID !== null;
-    const name = isIngredient ? 
-        `${lot.brand ? lot.brand + ' ' : ''}${lot.name}` : 
-        lot.name;
-    const typeName = isIngredient ? lot.ingredientTypeName : lot.supplyTypeName;
-
-    const percentRemaining = (lot.quantityRemaining / lot.quantityPurchased) * 100;
-    const totalCost = (lot.costPerUnit || 0) * lot.quantityPurchased;
-    const remainingValue = (lot.costPerUnit || 0) * lot.quantityRemaining;
+    
+    const item = itemResult[0];
+    const lots = BrewCode.inventory.getAll({ itemID, status: 'active' });
+    
+    const name = item.brand ? `${item.brand} ${item.name}` : item.name;
+    const typeName = item.ingredientTypeName || item.supplyTypeName;
+    const isOnDemand = item.onDemand === 1;
+    
+    const totalRemaining = lots.reduce((sum, lot) => sum + lot.quantityRemaining, 0);
+    const totalPurchased = lots.reduce((sum, lot) => sum + lot.quantityPurchased, 0);
+    const totalValue = lots.reduce((sum, lot) => sum + ((lot.costPerUnit || 0) * lot.quantityRemaining), 0);
 
     return `
         <div class="mb-6">
@@ -344,157 +562,79 @@ function renderInventoryDetail(BrewCode, lotID) {
             </button>
             
             <h1 class="text-4xl font-bold text-white mb-2">${name}</h1>
-            <div class="text-gray-400 mb-4">${typeName}</div>
+            <p class="text-gray-400">${typeName || 'Uncategorized'}</p>
+            ${isOnDemand ? `<span class="inline-block bg-blue-900/40 text-blue-300 text-sm px-3 py-1 rounded mt-2">On Demand</span>` : ''}
         </div>
 
-        <!-- Details Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <!-- Quantity Info -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
-                <h3 class="text-lg font-semibold text-white mb-4">Quantity</h3>
-                <div class="space-y-3">
-                    <div>
-                        <div class="text-sm text-gray-400">Remaining</div>
-                        <div class="text-3xl font-bold text-white">
-                            ${lot.quantityRemaining.toFixed(1)} ${lot.unit}
-                        </div>
-                        <div class="text-sm text-gray-500">
-                            ${percentRemaining.toFixed(0)}% of ${lot.quantityPurchased.toFixed(1)} ${lot.unit}
-                        </div>
-                    </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            ${!isOnDemand ? `
+                <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                    <div class="text-sm text-gray-400 mb-1">Current Stock</div>
+                    <div class="text-3xl font-bold text-white">${totalRemaining.toFixed(1)} ${item.unit}</div>
+                    ${totalPurchased > 0 ? `<div class="text-xs text-gray-500 mt-2">${((totalRemaining / totalPurchased) * 100).toFixed(0)}% of ${totalPurchased.toFixed(1)} purchased</div>` : ''}
                 </div>
-            </div>
-
-            <!-- Purchase Info -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
-                <h3 class="text-lg font-semibold text-white mb-4">Purchase Info</h3>
-                <div class="space-y-2 text-sm">
-                    <div class="flex justify-between">
-                        <span class="text-gray-400">Purchased:</span>
-                        <span class="text-white">${fmt.date(lot.purchaseDate)}</span>
-                    </div>
-                    ${lot.expirationDate ? `
-                        <div class="flex justify-between">
-                            <span class="text-gray-400">Expires:</span>
-                            <span class="text-white">${fmt.date(lot.expirationDate)}</span>
-                        </div>
-                    ` : ''}
-                    ${lot.supplier ? `
-                        <div class="flex justify-between">
-                            <span class="text-gray-400">Supplier:</span>
-                            <span class="text-white">${lot.supplier}</span>
-                        </div>
-                    ` : ''}
-                    ${lot.costPerUnit ? `
-                        <div class="flex justify-between">
-                            <span class="text-gray-400">Cost per ${lot.unit}:</span>
-                            <span class="text-white">$${lot.costPerUnit.toFixed(2)}</span>
-                        </div>
-                        <div class="flex justify-between pt-2 border-t border-gray-700">
-                            <span class="text-gray-400">Total Cost:</span>
-                            <span class="text-white font-semibold">$${totalCost.toFixed(2)}</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-400">Remaining Value:</span>
-                            <span class="text-white font-semibold">$${remainingValue.toFixed(2)}</span>
-                        </div>
-                    ` : ''}
+                <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                    <div class="text-sm text-gray-400 mb-1">Stock Value</div>
+                    <div class="text-3xl font-bold text-white">${fmt.currency(totalValue)}</div>
                 </div>
+            ` : `
+                <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                    <div class="text-sm text-gray-400 mb-1">Purchase As Needed</div>
+                    <div class="text-3xl font-bold text-blue-400">On Demand</div>
+                    ${item.onDemandPrice ? `<div class="text-sm text-gray-400 mt-2">${fmt.currency(item.onDemandPrice)} per ${item.onDemandPriceQty} ${item.unit}</div>` : ''}
+                </div>
+            `}
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                <div class="text-sm text-gray-400 mb-1">Reorder Point</div>
+                <div class="text-3xl font-bold text-white">${item.reorderPoint !== null ? item.reorderPoint + ' ' + item.unit : '—'}</div>
             </div>
         </div>
 
-        ${lot.notes ? `
+        ${!isOnDemand && lots.length > 0 ? `
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-6 mb-6">
-                <h3 class="text-lg font-semibold text-white mb-4">Notes</h3>
-                <p class="text-gray-300 whitespace-pre-line">${lot.notes}</p>
+                <h2 class="text-xl font-bold text-white mb-4">Lots (${lots.length})</h2>
+                <div class="space-y-3">
+                    ${lots.map(lot => `
+                        <div class="bg-gray-700/50 rounded p-4">
+                            <div class="flex justify-between items-start mb-2">
+                                <div>
+                                    <div class="font-semibold text-white">${lot.quantityRemaining.toFixed(1)} ${lot.unit}</div>
+                                    <div class="text-xs text-gray-400">Acquired ${fmt.date(lot.purchaseDate)}</div>
+                                </div>
+                                <div class="text-right">
+                                    ${lot.supplier ? `<div class="text-sm text-gray-400">${lot.supplier}</div>` : ''}
+                                    ${lot.costPerUnit ? `<div class="text-sm text-white font-semibold">${fmt.currency(lot.costPerUnit * lot.quantityRemaining)}</div>` : ''}
+                                </div>
+                            </div>
+                            ${lot.expirationDate ? `
+                                <div class="text-xs ${new Date(lot.expirationDate) < new Date() ? 'text-red-400' : 'text-gray-400'}">
+                                    ${new Date(lot.expirationDate) < new Date() ? '⚠ ' : '⏰'} ${fmt.date(lot.expirationDate)}
+                                </div>
+                            ` : ''}
+                        </div>
+                    `).join('')}
+                </div>
             </div>
         ` : ''}
 
-        <!-- Actions -->
-        <div class="flex gap-4">
-            <button 
-                onclick="window.brewcode.markInventoryExpired(${lot.lotID})"
-                class="bg-red-600 hover:bg-red-700 text-white py-3 px-6 rounded-lg transition-colors"
-            >
-                Mark as Expired
-            </button>
+        <div class="flex gap-3">
+            ${!isOnDemand ? `
+                <button 
+                    onclick="window.brewcode.showAddLotForm(${itemID})"
+                    class="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-3 px-6 rounded-lg transition-colors font-semibold"
+                >
+                    + Add Lot
+                </button>
+            ` : ''}
         </div>
     `;
 }
 
-/**
- * Apply all inventory filters
- */
-function applyInventoryFilters() {
-    const typeFilter = document.getElementById('inv-filter-type').value;
-    const stockFilter = document.getElementById('inv-filter-stock').value;
-    const categoryFilter = document.getElementById('inv-filter-category').value;
-    
-    const cards = document.querySelectorAll('[data-inventory-type]');
-    
-    cards.forEach(card => {
-        const itemType = card.dataset.inventoryType;
-        const percentRemaining = parseFloat(card.dataset.percentRemaining || 100);
-        const category = card.dataset.category || '';
-        
-        let visible = true;
-        
-        // Apply item type filter
-        if (typeFilter === 'ingredients' && itemType !== 'ingredient') visible = false;
-        if (typeFilter === 'supplies' && itemType !== 'supply') visible = false;
-        
-        // Apply stock level filter
-        if (stockFilter === 'in-stock' && percentRemaining <= 0) visible = false;
-        if (stockFilter === 'low-stock' && (percentRemaining >= 25 || percentRemaining <= 0)) visible = false;
-        if (stockFilter === 'out-of-stock' && percentRemaining > 0) visible = false;
-        
-        // Apply category filter
-        if (categoryFilter !== 'all' && category !== categoryFilter) visible = false;
-        
-        card.style.display = visible ? 'block' : 'none';
-    });
-    
-    // Update category dropdown based on type selection
-    updateCategoryDropdown();
-}
-
-/**
- * Update category dropdown options based on selected item type
- */
-function updateCategoryDropdown() {
-    const typeFilter = document.getElementById('inv-filter-type').value;
-    const categorySelect = document.getElementById('inv-filter-category');
-    const currentCategory = categorySelect.value;
-    
-    // Get unique categories from visible items
-    const cards = document.querySelectorAll('[data-inventory-type]');
-    const categories = new Set();
-    
-    cards.forEach(card => {
-        const itemType = card.dataset.inventoryType;
-        const category = card.dataset.category;
-        
-        if ((typeFilter === 'all') || 
-            (typeFilter === 'ingredients' && itemType === 'ingredient') ||
-            (typeFilter === 'supplies' && itemType === 'supply')) {
-            if (category) categories.add(category);
-        }
-    });
-    
-    // Rebuild dropdown
-    categorySelect.innerHTML = '<option value="all">All Categories</option>';
-    Array.from(categories).sort().forEach(cat => {
-        const option = document.createElement('option');
-        option.value = cat;
-        option.textContent = cat;
-        if (cat === currentCategory) option.selected = true;
-        categorySelect.appendChild(option);
-    });
-}
-
-export { 
+export {
     renderInventoryPage,
     renderInventoryDetail,
     applyInventoryFilters,
-    updateCategoryDropdown
+    toggleFilters,
+    toggleDropdown,
+    handleMultiSelectAll
 };

@@ -276,163 +276,32 @@ CREATE TABLE IF NOT EXISTS ingredientTypeContexts (
   FOREIGN KEY (contextID) REFERENCES usageContexts(contextID) ON DELETE CASCADE
 );
 
--- -----------------------------------------------------------------------------
--- Ingredient Type Extended Data
--- -----------------------------------------------------------------------------
--- Stores type-specific technical data for ingredients using flexible JSON format.
--- Allows different ingredient categories to have specialized fields without
--- creating separate tables for each type.
---
--- dataType: Category of extended data
---   - "yeast": Fermentation characteristics
---   - "hop": Bittering and aroma properties
---   - "honey": Fermentability and composition
---   - "fruit": Sugar content and acidity
---   - "malt": Extract potential and color contribution
---
--- jsonData: Flexible JSON object containing type-specific fields
---
--- JSON Schema Examples:
---
--- YEAST:
--- {
---   "strain": "Lalvin 71B-1122",
---   "form": "dry",
---   "attenuation": 75,
---   "alcoholTolerance": 14,
---   "temperatureRange": {"min": 15, "max": 30, "unit": "C"},
---   "flocculation": "medium",
---   "notes": "Reduces acidity, produces fruity esters"
--- }
---
--- HOP:
--- {
---   "alphaAcid": 12.5,
---   "betaAcid": 4.2,
---   "form": "pellet",
---   "origin": "US",
---   "profile": ["citrus", "pine", "resinous"],
---   "notes": "Classic American IPA hop"
--- }
---
--- HONEY:
--- {
---   "variety": "wildflower",
---   "fermentability": 100,
---   "moistureContent": 18,
---   "color": "amber",
---   "notes": "Multi-floral, varies by season"
--- }
---
--- FRUIT:
--- {
---   "sugarContent": 15.2,
---   "acidity": 3.4,
---   "pH": 3.3,
---   "notes": "Typical values, varies by variety and ripeness"
--- }
---
--- MALT:
--- {
---   "potentialSG": 1.037,
---   "ppg": 37,
---   "colorSRM": 3,
---   "notes": "Base malt for pale ales"
--- }
--- -----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS ingredientTypeExtendedData (
-  ingredientTypeID  INTEGER PRIMARY KEY,
-  dataType          TEXT NOT NULL,       -- "yeast", "hop", "honey", "fruit", "malt"
-  jsonData          TEXT NOT NULL,       -- JSON object with type-specific fields
-  FOREIGN KEY (ingredientTypeID) REFERENCES ingredientTypes(ingredientTypeID) ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS items (
+  itemID                INTEGER PRIMARY KEY AUTOINCREMENT,
+  brand                 TEXT,                     -- NULL for homemade/generic
+  name                  TEXT NOT NULL,            -- User-defined name
+  unit                  TEXT NOT NULL,            -- How measured: "g", "L", "count", etc.
+  onDemand              INTEGER DEFAULT 0,        -- 1 = buy/make as needed, 0 = track stock
+  onDemandPrice         REAL,                     -- Cost for the quantity in onDemandPriceQty
+  onDemandPriceQty      REAL,                     -- Quantity that price applies to
+  reorderPoint          REAL,                     -- When to reorder/make more
+  reorderQuantity       REAL,                     -- How much to reorder/make
+  autoAlert             INTEGER DEFAULT 1,        -- 1 = notify when below reorderPoint
+  notes                 TEXT,                     -- User notes
+  isActive              INTEGER DEFAULT 1,        -- 1 = available, 0 = discontinued
+  createdDate           TEXT DEFAULT (DATE('now')),
+  modifiedDate          TEXT DEFAULT (DATE('now'))
 );
 
--- -----------------------------------------------------------------------------
--- ingredients
--- -----------------------------------------------------------------------------
--- Specific branded ingredients that users actually buy and use.
--- Links to generic ingredientTypes - ingredients are "instances" of types.
---
--- Examples:
---   ingredientType: "Apple Juice"
---     ├─ ingredient: brand="K Classic", name="Apfel Saft"
---     ├─ ingredient: brand="Wesergold", name="Naturtrüb"
---     └─ ingredient: brand=NULL, name="My homemade pressed juice"
---
---   ingredientType: "Honey (Wildflower)"
---     ├─ ingredient: brand="Kirkland", name="Wildflower Honey"
---     └─ ingredient: brand=NULL, name="Local beekeeper honey"
---
--- brand: NULL for homemade or generic items
--- packageSize/Unit: NULL for bulk or non-standardized items
---
--- Purpose: Allows inventory tracking at the ingredient level while keeping
--- recipes at the generic ingredient type level
---
--- ON DELETE CASCADE: If ingredient type deleted, remove all its ingredients
--- Note: Batch history preserved via ingredientName snapshot in batchIngredients
--- -----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS ingredients (
-  ingredientID        INTEGER PRIMARY KEY AUTOINCREMENT,
-  ingredientTypeID    INTEGER NOT NULL,
-  brand               TEXT,                     -- NULL for homemade/generic
-  name                TEXT NOT NULL,            -- User-defined name
-  packageSize         REAL,                     -- NULL if not standardized
-  packageUnit         TEXT,                     -- "L", "kg", "g", "lb", etc.
-  notes               TEXT,                     -- User notes
-  isActive            INTEGER DEFAULT 1,        -- 1 = available, 0 = discontinued
-  FOREIGN KEY (ingredientTypeID) REFERENCES ingredientTypes(ingredientTypeID) ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS itemRoles (
+  itemID                INTEGER NOT NULL,
+  roleType              TEXT NOT NULL,            -- 'ingredient' or 'supply'
+  itemTypeID            INTEGER NOT NULL,         -- FK to ingredientTypes or supplyTypes
+  categoryID            INTEGER NOT NULL,         -- FK to itemCategories (context for UI)
+  PRIMARY KEY (itemID, roleType),
+  FOREIGN KEY (itemID) REFERENCES items(itemID) ON DELETE CASCADE,
+  FOREIGN KEY (categoryID) REFERENCES itemCategories(categoryID)
 );
-
--- -----------------------------------------------------------------------------
--- Supplies
--- -----------------------------------------------------------------------------
--- Specific branded supplies that users actually buy and use.
--- Links to generic supplyTypes - supplies are "instances" of types.
--- 
--- Key Difference from ingredients:
--- - ingredients: Ingredients used IN the beverage (juice, honey, yeast)
--- - Supplies: Consumables used FOR ingrediention (bottles, sanitizer, caps)
---
--- Examples:
---   supplyType: "Sanitizer (Star San)"
---     ├─ supply: brand="Five Star", name="Star San 32oz"
---     └─ supply: brand="Five Star", name="Star San 1 gallon"
---
---   supplyType: "Bottle (750ml Wine, Bordeaux)"
---     ├─ supply: brand="Midwest Supplies", name="Bordeaux 750ml (case of 12)"
---     └─ supply: brand=NULL, name="Recycled wine bottles"
---
---   supplyType: "Crown Cap (26mm)"
---     ├─ supply: brand="Oxygen Barrier", name="Gold oxygen barrier caps"
---     └─ supply: brand=NULL, name="Standard crown caps"
---
--- brand: NULL for generic or unbranded items
--- packageSize/Unit: NULL for bulk or non-standardized items
---
--- Purpose: Track consumable supplies separately from recipe ingredients
--- Note: Supplies do NOT appear in recipes (only ingredients do)
---
--- ON DELETE CASCADE: If supply type deleted, remove all its supplies
--- -----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS supplies (
-  supplyID            INTEGER PRIMARY KEY AUTOINCREMENT,
-  supplyTypeID        INTEGER NOT NULL,
-  brand               TEXT,                     -- NULL for generic
-  name                TEXT NOT NULL,            -- User-defined name
-  packageSize         REAL,                     -- NULL if not standardized
-  packageUnit         TEXT,                     -- "L", "kg", "g", "oz", "count"
-  notes               TEXT,                     -- User notes, specifications
-  isActive            INTEGER DEFAULT 1,        -- 1 = available, 0 = discontinued
-  FOREIGN KEY (supplyTypeID) REFERENCES supplyTypes(supplyTypeID) ON DELETE CASCADE
-);
-
--- Add uniqueness constraint (brand + name must be unique per type)
-CREATE UNIQUE INDEX idx_ingredients_unique 
-ON ingredients(ingredientTypeID, COALESCE(brand, ''), name);
-
-CREATE UNIQUE INDEX idx_supplies_unique 
-ON supplies(supplyTypeID, COALESCE(brand, ''), name);
 
 -- -----------------------------------------------------------------------------
 -- Recipe Stages
@@ -666,20 +535,20 @@ CREATE TABLE IF NOT EXISTS batchStages (
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS batchIngredients (
   batchIngredientID   INTEGER PRIMARY KEY AUTOINCREMENT,
-  batchStageID        INTEGER NOT NULL,              -- Links to batch stage, not batch
+  batchStageID        INTEGER NOT NULL,
   ingredientTypeID    INTEGER NOT NULL,
-  ingredientTypeName  TEXT NOT NULL,                 -- Snapshot
-  ingredientID        INTEGER,                       -- Specific ingredient used (nullable)
-  ingredientName      TEXT,                          -- Snapshot (nullable if not selected)
-  plannedAmount       REAL NOT NULL,                 -- From recipe (scaled)
+  ingredientTypeName  TEXT NOT NULL,
+  itemID              INTEGER,                          -- Specific item used
+  itemName            TEXT,                             -- Snapshot
+  plannedAmount       REAL NOT NULL,
   plannedUnit         TEXT NOT NULL,
-  actualAmount        REAL,                          -- What was actually used
+  actualAmount        REAL,
   actualUnit          TEXT,
-  inventoryLotID      INTEGER,                       -- Optional: FIFO tracking
-  notes               TEXT,                          -- Per-batch notes
+  inventoryLotID      INTEGER,
+  notes               TEXT,
   FOREIGN KEY (batchStageID) REFERENCES batchStages(batchStageID) ON DELETE CASCADE,
   FOREIGN KEY (ingredientTypeID) REFERENCES ingredientTypes(ingredientTypeID),
-  FOREIGN KEY (ingredientID) REFERENCES ingredients(ingredientID) ON DELETE SET NULL,
+  FOREIGN KEY (itemID) REFERENCES items(itemID) ON DELETE SET NULL,
   FOREIGN KEY (inventoryLotID) REFERENCES inventoryLots(lotID) ON DELETE SET NULL
 );
 
@@ -845,20 +714,17 @@ CREATE TABLE IF NOT EXISTS equipmentUsage (
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS inventoryLots (
   lotID               INTEGER PRIMARY KEY AUTOINCREMENT,
-  ingredientID           INTEGER,                       -- For ingredients
-  supplyID            INTEGER,                       -- For supplies
-  quantityPurchased   REAL NOT NULL,                 -- Original amount
-  quantityRemaining   REAL NOT NULL,                 -- Current amount left
-  unit                TEXT NOT NULL,                 -- "kg", "L", "count", etc.
-  purchaseDate        TEXT NOT NULL,                 -- ISO 8601: YYYY-MM-DD
-  expirationDate      TEXT,                          -- NULL if non-perishable
-  costPerUnit         REAL,                          -- Price paid per unit
-  supplier            TEXT,                          -- Where purchased
-  status              TEXT NOT NULL DEFAULT 'active', -- "active", "consumed", "expired"
-  notes               TEXT,                          -- User notes
-  FOREIGN KEY (ingredientID) REFERENCES ingredients(ingredientID) ON DELETE CASCADE,
-  FOREIGN KEY (supplyID) REFERENCES supplies(supplyID) ON DELETE CASCADE,
-  CHECK ((ingredientID IS NOT NULL AND supplyID IS NULL) OR (ingredientID IS NULL AND supplyID IS NOT NULL))
+  itemID              INTEGER NOT NULL,                 -- FK to items (replaces ingredientID/supplyID)
+  quantityPurchased   REAL NOT NULL,
+  quantityRemaining   REAL NOT NULL,
+  unit                TEXT NOT NULL,
+  purchaseDate        TEXT NOT NULL,
+  expirationDate      TEXT,
+  costPerUnit         REAL,
+  supplier            TEXT,
+  status              TEXT NOT NULL DEFAULT 'active',
+  notes               TEXT,
+  FOREIGN KEY (itemID) REFERENCES items(itemID) ON DELETE CASCADE
 );
 
 -- -----------------------------------------------------------------------------
@@ -891,6 +757,7 @@ CREATE TABLE IF NOT EXISTS userSettings (
   timeFormat        TEXT NOT NULL DEFAULT '24h',
   theme             TEXT NOT NULL DEFAULT 'dark',
   language          TEXT NOT NULL DEFAULT 'en',
+  currencySymbol    TEXT DEFAULT '€',
   CHECK (settingsID = 1),
   CHECK (temperatureUnit IN ('c', 'f')),
   CHECK (measurementSystem IN ('metric', 'imperial', 'us')),
@@ -903,30 +770,49 @@ CREATE TABLE IF NOT EXISTS userSettings (
 INSERT OR IGNORE INTO userSettings (settingsID) VALUES (1);
 
 -- =============================================================================
--- SEED DATA (Reference data that ships with every new database)
+-- BREWCODE SEED DATA (COMPLETE REFACTOR)
+-- =============================================================================
+-- This seed data is designed to:
+-- 1. Establish a working foundation for a new brewcode database
+-- 2. Avoid duplicate entries and referential integrity issues
+-- 3. Support wine, mead, cider, and beer recipe creation
+-- 4. Use a simplified, maintainable structure
 -- =============================================================================
 
--- Item Categories
--- Note: sortOrder has gaps (1-7, then 20-23) to allow adding categories later
+-- =============================================================================
+-- FOUNDATION: ITEM CATEGORIES
+-- =============================================================================
+-- Purpose: High-level grouping for all items (ingredients & supplies)
+-- Note: sortOrder has gaps to allow insertion later without reordering
+-- Note: CategoryID values are sequential (1-12) based on insert order
+-- =============================================================================
+
 INSERT OR IGNORE INTO itemCategories (name, description, sortOrder) VALUES 
   -- INGREDIENTS (consumables used IN the beverage)
-  ('Fruits', 'Fresh or processed fruits used in fermentation', 1),
-  ('Grains & Malts', 'Base malts, specialty malts, and adjunct grains', 2),
-  ('Honeys, Syrups & Sugars', 'Sweeteners of various types', 3),
-  ('Flavorants', 'Spices, herbs, woods, and extracts', 4),
-  ('Hops', 'Hop varieties for bitterness, flavour, and aroma', 5),
-  ('Additives', 'Nutrients, salts, stabilisers, fining agents', 6),
-  ('Yeasts & Microbes', 'Yeast strains and microbial cultures', 7),
+  ('Water', 'Brewing water for fermentation and dilution', 1),
+  ('Fruits & Juices', 'Fresh or processed fruits used in fermentation', 2),
+  ('Grains & Malts', 'Base malts, specialty malts, and adjunct grains', 3),
+  ('Honeys, Syrups & Sugars', 'Sweeteners of various types', 4),
+  ('Flavorants', 'Spices, herbs, woods, and extracts', 5),
+  ('Hops', 'Hop varieties for bitterness, flavour, and aroma', 6),
+  ('Additives', 'Nutrients, salts, stabilisers, fining agents', 7),
+  ('Yeasts & Microbes', 'Yeast strains and microbial cultures', 8),
   
   -- SUPPLIES (consumables used FOR ingrediention, not in beverage)
   ('Cleaners & Sanitizers', 'Cleaning and sanitising agents', 20),
-  ('Bottles', 'Glass or plastic bottles for packaging', 21),
+  ('Bottles & Vessels', 'Glass or plastic bottles and kegs for packaging', 21),
   ('Closures', 'Corks, caps, screw caps for sealing', 22),
-  ('Other Packaging', 'Labels, carriers, boxes, packaging materials', 23);
+  ('Packaging Materials', 'Labels, carriers, boxes, shrink capsules', 23);
 
--- Usage Contexts
+-- =============================================================================
+-- FOUNDATION: USAGE CONTEXTS
+-- =============================================================================
+-- Purpose: Define how ingredients can be used in recipe stages
+-- Note: These are intentionally fixed contextID values to match stage validation
+-- =============================================================================
+
 INSERT OR IGNORE INTO usageContexts (contextID, name, description) VALUES
-(1, 'fermentable', 'Provides fermentable sugars for alcohol ingrediention'),
+(1, 'fermentable', 'Provides fermentable sugars for alcohol production'),
 (2, 'primer', 'Adds fermentables for carbonation (bottle conditioning)'),
 (3, 'nonfermentable', 'Adds flavour or body without fermenting'),
 (4, 'nutrient', 'Provides nutrients for yeast or microbes'),
@@ -935,49 +821,18 @@ INSERT OR IGNORE INTO usageContexts (contextID, name, description) VALUES
 (7, 'sanitiser', 'Used to sanitise equipment before use'),
 (8, 'prefermentation-treatment', 'Treats must before fermentation (kills wild microbes)'),
 (9, 'fining', 'Clarifies and removes particulates'),
-(10, 'packaging', 'Used to package the final ingredient'),
+(10, 'packaging', 'Used to package the final beverage'),
 (11, 'fermenter', 'Yeast or microbes that perform fermentation'),
 (12, 'malolactic', 'Lactic acid bacteria for malolactic fermentation'),
 (13, 'stabiliser', 'Prevents fermentation restart after fermentation');
 
--- Category Allowed Contexts
--- Defines which contexts each category can have
-INSERT OR IGNORE INTO categoryAllowedContexts (categoryID, contextID)
-SELECT c.categoryID, u.contextID
-FROM itemCategories c, usageContexts u
-WHERE 
-  -- Fruits can be fermentable or used for priming
-  (c.name = 'Fruits' AND u.name IN ('fermentable', 'primer')) OR
-  
-  -- Grains & Malts can be fermentable or used for priming
-  (c.name = 'Grains & Malts' AND u.name IN ('fermentable', 'primer')) OR
-  
-  -- Honeys, Syrups & Sugars can be fermentable or used for priming
-  (c.name = 'Honeys, Syrups & Sugars' AND u.name IN ('fermentable', 'primer')) OR
-  
-  -- Flavorants add flavour but don't ferment
-  (c.name = 'Flavorants' AND u.name = 'nonfermentable') OR
-  
-  -- Hops add flavour/bitterness but don't ferment
-  (c.name = 'Hops' AND u.name = 'nonfermentable') OR
-  
-  -- Yeasts & Microbes are fermenters or malolactic bacteria
-  (c.name = 'Yeasts & Microbes' AND u.name IN ('fermenter', 'malolactic')) OR
-  
-  -- Additives can be nutrients, salts, stabilisers, prefermentation treatments, or fining agents
-  (c.name = 'Additives' AND u.name IN ('nutrient', 'salt', 'stabiliser', 'prefermentation-treatment', 'fining')) OR
-  
-  -- Cleaners & Sanitizers clean and sanitise equipment
-  (c.name = 'Cleaners & Sanitizers' AND u.name IN ('cleaner', 'sanitiser')) OR
-  
-  -- Packaging items are used for packaging
-  (c.name = 'Bottles' AND u.name = 'packaging') OR
-  (c.name = 'Closures' AND u.name = 'packaging') OR
-  (c.name = 'Other Packaging' AND u.name = 'packaging');
+-- =============================================================================
+-- FOUNDATION: STAGE TYPES
+-- =============================================================================
+-- Purpose: Define standardized stages in fermentation workflow
+-- Note: isRequired=1 means stage must be in every recipe
+-- =============================================================================
 
--- Stage Types
--- Note: sortOrder has gaps (10, 20, 30...) to allow inserting stages later
--- Note: Three stages are required (isRequired=1): Must Preparation, Fermentation, Packaging
 INSERT OR IGNORE INTO stageTypes 
 (stageTypeID, name, description, isRequired, sortOrder, requiresStage, excludesStage) VALUES
 (1, 'Must Preparation', 'Prepare the must (mix ingredients, measure SG/pH)', 1, 10, NULL, NULL),
@@ -989,122 +844,226 @@ INSERT OR IGNORE INTO stageTypes
 (7, 'Priming', 'Add fermentables before packaging for carbonation', 0, 70, 2, 4),
 (8, 'Packaging', 'Final packaging into bottles, kegs, or other containers', 1, 80, 2, NULL);
 
--- ingredientTypes Seed Data
-INSERT OR IGNORE INTO ingredientTypes (name, categoryID, description, beverageTypes, isPrimaryRequired) VALUES
-  -- Fruits
-  ('Apple Juice', 1, 'Any apple juice (filtered or unfiltered)', '["Cider"]', 1),
-  ('Pear Juice', 1, 'Pear juice for perry or blended ciders', '["Perry", "Cider"]', 1),
-  ('Grape Juice (Concord)', 1, 'Concord grape juice for wine', '["Wine"]', 1),
-  ('Grape Juice (Muscadine)', 1, 'Muscadine grape juice for wine', '["Wine"]', 1),
-  ('Blackberry (Fresh)', 1, 'Fresh blackberries for fruit wines', '["Wine"]', 1),
-  
-  -- Honeys
-  ('Honey (Wildflower)', 3, 'Wildflower honey - most common for mead', '["Mead", "Melomel"]', 1),
-  ('Honey (Orange Blossom)', 3, 'Orange blossom honey - mild flavour', '["Mead", "Melomel"]', 1),
-  ('Honey (Buckwheat)', 3, 'Buckwheat honey - strong, dark flavour', '["Mead", "Melomel"]', 1),
-  
-  -- Sugars (adjunct, never required for primary)
-  ('Table Sugar (Sucrose)', 3, 'White table sugar for boosting ABV', '["Mead", "Cider", "Wine"]', 0),
-  ('Dextrose (Corn Sugar)', 3, 'Corn sugar, 100% fermentable', '["Mead", "Cider", "Wine", "Beer"]', 0),
-  
-  -- Yeasts (broad categories)
-  ('Wine Yeast', 7, 'General wine yeast for fermentation', '["Wine", "Mead"]', 0),
-  ('Champagne Yeast', 7, 'High alcohol tolerance, neutral profile', '["Wine", "Mead", "Cider"]', 0),
-  ('Ale Yeast', 7, 'Top-fermenting beer yeast', '["Beer"]', 0),
-  ('Lager Yeast', 7, 'Bottom-fermenting beer yeast', '["Beer"]', 0),
-  ('Cider Yeast', 7, 'Yeast specifically for cider ingrediention', '["Cider"]', 0),
+-- =============================================================================
+-- CATEGORY ALLOWED CONTEXTS
+-- =============================================================================
+-- Purpose: Define which contexts are valid for each ingredient/supply category
+-- CategoryID Reference:
+--   1=Water, 2=Fruits & Juices, 3=Grains & Malts, 4=Honeys Syrups Sugars
+--   5=Flavorants, 6=Hops, 7=Additives, 8=Yeasts & Microbes
+--   9=Cleaners & Sanitizers, 10=Bottles & Vessels, 11=Closures, 12=Packaging Materials
+-- =============================================================================
 
-  -- Bacteria
-  ('Lactic Acid Bacteria (LAB)', 7, 'For malolactic fermentation - converts malic to lactic acid', '["Wine", "Cider"]', 0),
+INSERT OR IGNORE INTO categoryAllowedContexts (categoryID, contextID) VALUES
+  -- Water: fermentable (primary base) and salt (water chemistry)
+  (1, 1), (1, 5),
+  -- Fruits & Juices: fermentable and primer
+  (2, 1), (2, 2),
+  -- Grains & Malts: fermentable and primer
+  (3, 1), (3, 2),
+  -- Honeys, Syrups & Sugars: fermentable and primer
+  (4, 1), (4, 2),
+  -- Flavorants: nonfermentable
+  (5, 3),
+  -- Hops: nonfermentable
+  (6, 3),
+  -- Yeasts & Microbes: fermenter and malolactic
+  (8, 11), (8, 12),
+  -- Additives: nutrient, salt, stabiliser, prefermentation-treatment, fining
+  (7, 4), (7, 5), (7, 13), (7, 8), (7, 9),
+  -- Cleaners & Sanitizers: cleaner and sanitiser
+  (9, 6), (9, 7),
+  -- Bottles & Vessels: packaging
+  (10, 10),
+  -- Closures: packaging
+  (11, 10),
+  -- Packaging Materials: packaging
+  (12, 10);
 
+-- =============================================================================
+-- STAGE TYPE ALLOWED CONTEXTS
+-- =============================================================================
+-- Purpose: Define which contexts are valid for each stage type
+-- =============================================================================
+
+INSERT OR IGNORE INTO stageTypeAllowedContexts (stageTypeID, contextID) VALUES
+  -- Must Preparation: fermentable, salt, nutrient, prefermentation-treatment, nonfermentable
+  (1, 1), (1, 5), (1, 4), (1, 8), (1, 3),
+  -- Fermentation: fermenter, nutrient
+  (2, 11), (2, 4),
+  -- Malolactic Fermentation: malolactic
+  (3, 12),
+  -- Stabilisation: stabiliser
+  (4, 13),
+  -- Flavor Adjustment: fermentable, nonfermentable
+  (5, 1), (5, 3),
+  -- Clarification & Aging: fining
+  (6, 9),
+  -- Priming: primer
+  (7, 2),
+  -- Packaging: packaging
+  (8, 10);
+
+-- =============================================================================
+-- INGREDIENT TYPES
+-- =============================================================================
+-- Purpose: Generic ingredient types that recipes reference
+-- Note: beverageTypes is JSON array of compatible beverage types
+-- CategoryID Reference:
+--   1=Water, 2=Fruits & Juices, 3=Grains & Malts, 4=Honeys Syrups Sugars
+--   5=Flavorants, 6=Hops, 7=Additives, 8=Yeasts & Microbes
+-- =============================================================================
+
+INSERT OR IGNORE INTO ingredientTypes (categoryID, name, description, beverageTypes, isPrimaryRequired) VALUES
+  -- Water (primary for all beverages)
+  (1, 'Water', 'Brewing water for fermentation and dilution', '["Mead", "Beer", "Cider", "Wine"]', 0),
+  
+  -- Fruits & Juices (primary fermentables for cider/wine/perry)
+  (2, 'Apple Juice', 'Any apple juice (filtered or unfiltered)', '["Cider"]', 1),
+  (2, 'Pear Juice', 'Pear juice for perry or blended ciders', '["Perry", "Cider"]', 1),
+  (2, 'Grape Juice (Concord)', 'Concord grape juice for wine', '["Wine"]', 1),
+  (2, 'Grape Juice (Muscadine)', 'Muscadine grape juice for wine', '["Wine"]', 1),
+  (2, 'Blackberry', 'Fresh or frozen blackberries for fruit wines', '["Wine"]', 0),
+  
+  -- Grains & Malts (for beer, or adjuncts for other beverages)
+  (3, 'Pale Malt', 'Base malt for pale ales and lagers', '["Beer"]', 1),
+  (3, 'Munich Malt', 'Base malt with mild bread/biscuit character', '["Beer"]', 1),
+  (3, 'Chocolate Malt', 'Roasted malt for color and chocolate notes', '["Beer"]', 0),
+  (3, 'Caramel Malt (20L)', 'Crystal malt for sweetness and body', '["Beer"]', 0),
+  
+  -- Honeys (primary fermentables for mead)
+  (4, 'Honey: Wildflower', 'Mixed floral honey - most common for mead', '["Mead", "Melomel"]', 1),
+  (4, 'Honey: Orange Blossom', 'Orange blossom honey - mild, citrus notes', '["Mead", "Melomel"]', 1),
+  (4, 'Honey: Buckwheat', 'Buckwheat honey - strong, molasses-like flavor', '["Mead", "Melomel"]', 1),
+  
+  -- Sugars & Adjuncts (never primary, used for boosting/priming)
+  (4, 'Table Sugar (Sucrose)', 'White table sugar for boosting ABV or priming', '["Mead", "Cider", "Wine", "Beer"]', 0),
+  (4, 'Dextrose (Corn Sugar)', 'Corn sugar - 100% fermentable, ideal for priming', '["Mead", "Cider", "Wine", "Beer"]', 0),
+  
+  -- Flavorants
+  (5, 'Ginger Root', 'Fresh or dried ginger for spice character', '["Mead", "Cider", "Wine"]', 0),
+  (5, 'Cinnamon', 'Cinnamon bark or powder for warm spice notes', '["Mead", "Cider", "Wine"]', 0),
+  (5, 'Oak Chips', 'Oak for aging character and vanilla/oak notes', '["Wine", "Mead"]', 0),
+  
+  -- Hops (for beer, sometimes used in mead)
+  (6, 'Cascade Hops', 'American hop with floral/citrus notes', '["Beer"]', 0),
+  (6, 'Saaz Hops', 'Noble hop with spicy/herbal character', '["Beer"]', 0),
+  
+  -- Yeasts (generic types, not specific strains)
+  (8, 'Wine Yeast', 'Wine yeast', '["Wine", "Mead", "Cider"]', 0),
+  (8, 'Ale Yeast', 'Ale yeast - clean, crisp, reliable', '["Beer"]', 0),
+  (8, 'Cider Yeast', 'Champagne yeast - high tolerance, neutral', '["Wine", "Mead", "Cider"]', 0),
+  (8, 'Lager Yeast', 'Lager yeast - clean, malty', '["Beer"]', 0),
+  (8, 'Champagne Yeast', 'High alcohol tolerance, neutral profile', '["Wine", "Mead", "Cider"]', 0),
+  (8, 'Mead Yeast', 'Specialized yeast for mead fermentation', '["Mead"]', 0),
+  
+  -- Microbes (for malolactic fermentation)
+  (8, 'Lactic Acid Bacteria (LAB)', 'Malolactic bacteria - converts malic to lactic acid', '["Wine", "Cider"]', 0),
+  
   -- Additives
-  ('Potassium Metabisulfite (K-meta)', 6, 'Pre-fermentation antiseptic, kills wild yeast/bacteria', NULL, 0),
-  ('Campden Tablets', 6, 'Potassium or sodium metabisulfite tablets for must treatment', NULL, 0),
-  ('Potassium Sorbate', 6, 'Post-fermentation stabiliser, prevents yeast reingrediention', NULL, 0);
-  
--- Supply Types Seed Data
-INSERT OR IGNORE INTO supplyTypes (name, categoryID, description) VALUES
+  (7, 'Potassium Metabisulfite (K-Meta)', 'Pre-fermentation antiseptic and post-fermentation stabiliser', NULL, 0),
+  (7, 'Campden Tablets', 'Potassium metabisulfite tablets for must treatment', NULL, 0),
+  (7, 'Potassium Sorbate', 'Post-fermentation stabiliser - prevents yeast reinitiation', NULL, 0),
+  (7, 'Yeast Nutrient', 'DAP and other nutrients for strong fermentation', NULL, 0);
+
+-- =============================================================================
+-- INGREDIENT TYPE CONTEXTS
+-- =============================================================================
+-- Purpose: Define which contexts (usage methods) apply to each ingredient
+-- ContextID Reference:
+--   1=fermentable, 2=primer, 3=nonfermentable, 4=nutrient, 5=salt
+--   6=cleaner, 7=sanitiser, 8=prefermentation-treatment, 9=fining
+--   10=packaging, 11=fermenter, 12=malolactic, 13=stabiliser
+-- =============================================================================
+
+INSERT OR IGNORE INTO ingredientTypeContexts (ingredientTypeID, contextID)
+SELECT it.ingredientTypeID, 1 FROM ingredientTypes it WHERE it.name IN (
+  'Water', 'Apple Juice', 'Pear Juice', 'Grape Juice (Concord)', 'Grape Juice (Muscadine)',
+  'Pale Malt', 'Munich Malt', 'Chocolate Malt', 'Caramel Malt (20L)',
+  'Honey: Wildflower', 'Honey: Orange Blossom', 'Honey: Buckwheat',
+  'Table Sugar (Sucrose)', 'Dextrose (Corn Sugar)'
+)
+UNION ALL
+SELECT it.ingredientTypeID, 2 FROM ingredientTypes it WHERE it.name IN (
+  'Apple Juice', 'Pear Juice', 'Grape Juice (Concord)', 'Grape Juice (Muscadine)',
+  'Pale Malt', 'Munich Malt', 'Chocolate Malt', 'Caramel Malt (20L)',
+  'Honey: Wildflower', 'Honey: Orange Blossom', 'Honey: Buckwheat',
+  'Table Sugar (Sucrose)', 'Dextrose (Corn Sugar)'
+)
+UNION ALL
+SELECT it.ingredientTypeID, 3 FROM ingredientTypes it WHERE it.name IN (
+  'Ginger Root', 'Cinnamon', 'Oak Chips', 'Cascade Hops', 'Saaz Hops'
+)
+UNION ALL
+SELECT it.ingredientTypeID, 5 FROM ingredientTypes it WHERE it.name = 'Water'
+UNION ALL
+SELECT it.ingredientTypeID, 4 FROM ingredientTypes it WHERE it.name = 'Yeast Nutrient'
+UNION ALL
+SELECT it.ingredientTypeID, 8 FROM ingredientTypes it WHERE it.name IN (
+  'Potassium Metabisulfite (K-Meta)', 'Campden Tablets'
+)
+UNION ALL
+SELECT it.ingredientTypeID, 13 FROM ingredientTypes it WHERE it.name IN (
+  'Potassium Metabisulfite (K-Meta)', 'Campden Tablets', 'Potassium Sorbate'
+)
+UNION ALL
+SELECT it.ingredientTypeID, 11 FROM ingredientTypes it WHERE it.name IN (
+  'Lalvin 71B-1122', 'Lalvin QA23', 'Wyeast 1118 Champagne',
+  'SafAle S-04', 'Wyeast 2001 California Lager', 'Lalvin EC-1118'
+)
+UNION ALL
+SELECT it.ingredientTypeID, 12 FROM ingredientTypes it WHERE it.name = 'Lactic Acid Bacteria (LAB)';
+
+-- =============================================================================
+-- SUPPLY TYPES
+-- =============================================================================
+-- Purpose: Generic supply types for consumables used FOR ingrediention
+-- CategoryID Reference:
+--   9=Cleaners & Sanitizers, 10=Bottles & Vessels, 11=Closures, 12=Packaging Materials
+-- =============================================================================
+
+INSERT OR IGNORE INTO supplyTypes (categoryID, name, description) VALUES
   -- Cleaners & Sanitizers
-  ('Sanitizer', 8, 'Acid-based no-rinse sanitiser'),
-  ('Cleaner', 8, 'Powdered Brewery Wash - alkaline cleaner'),
+  (9, 'Sanitizer (No-Rinse Acid)', 'Acid-based no-rinse sanitiser like Star San'),
+  (9, 'Cleaner (PBW)', 'Powdered Brewery Wash - alkaline cleaner'),
+  (9, 'Potassium Metabisulfite', 'K-Meta used for sanitizing equipment'),
   
-  -- Bottles
-  ('Bottle', 9, 'Bottles for packaging beverages'),
-  ('Keg', 9, 'Cornelius-style keg for kegging beverages'),
-  ('Can', 9, 'Aluminium cans for packaging beverages'),
-  ('Barrel', 9, 'Wooden barrel for aging beverages'),
+  -- Bottles & Vessels
+  (10, 'Bottle (750ml Glass)', '750ml glass wine bottle'),
+  (10, 'Bottle (12oz Glass)', '12oz standard beer bottle'),
+  (10, 'Keg (5 Gallon)', '5 gallon Cornelius-style keg'),
+  (10, 'Barrel (5 Gallon Oak)', '5 gallon wooden barrel for aging'),
   
   -- Closures
-  ('Cork', 10, 'Standard straight cork for wine bottles'),
-  ('Cap, Crown', 10, 'Standard crown cap for beer bottles'),
-  ('Cap, Screw', 10, 'Screw cap with liner'),
+  (11, 'Cork (Standard #9)', 'Standard #9 straight cork for wine'),
+  (11, 'Crown Cap (#26)', '#26 crown cap for beer bottles'),
+  (11, 'Screw Cap (Plastic Lined)', 'Screw cap with plastic liner for wine'),
   
-  -- Other Packaging
-  ('Label', 11, 'Self-adhesive labels'),
-  ('Shrink Capsule', 11, 'Heat-shrink capsules for wine bottles'),
-  ('Carrier', 11, 'Boxes and crates for carrying bottles');
+  -- Packaging Materials
+  (12, 'Label (Self-Adhesive)', 'Self-adhesive wine or beer labels'),
+  (12, 'Shrink Capsule (PVC)', 'Heat-shrink PVC capsules for wine bottles'),
+  (12, 'Carrier Box (12 Bottle)', 'Box for carrying/storing 12 bottles');
 
--- Ingredient Type Contexts Seed Data
--- Assigns usage contexts to ingredient types
-INSERT OR IGNORE INTO ingredientTypeContexts (ingredientTypeID, contextID)
-SELECT it.ingredientTypeID, uc.contextID
-FROM ingredientTypes it, usageContexts uc
-WHERE
-  -- Fruit juices: fermentable and can prime
-  (it.name IN ('Apple Juice', 'Pear Juice', 'Grape Juice (Concord)', 'Grape Juice (Muscadine)') 
-   AND uc.name IN ('fermentable', 'primer')) OR
-  
-  -- Fresh fruits: fermentable only (don't typically prime with whole fruit)
-  (it.name = 'Blackberry (Fresh)' AND uc.name = 'fermentable') OR
-  
-  -- Honeys: fermentable and can prime
-  (it.name LIKE 'Honey%' AND uc.name IN ('fermentable', 'primer')) OR
-  
-  -- Sugars: fermentable and can prime
-  (it.name IN ('Table Sugar (Sucrose)', 'Dextrose (Corn Sugar)') 
-   AND uc.name IN ('fermentable', 'primer')) OR
-  
-  -- Yeasts: fermenters
-  (it.name IN ('Wine Yeast', 'Champagne Yeast', 'Ale Yeast', 'Lager Yeast', 'Cider Yeast') 
-  AND uc.name = 'fermenter') OR
-  
-  -- LAB: malolactic
-  (it.name = 'Lactic Acid Bacteria (LAB)' AND uc.name = 'malolactic') OR
-
-  -- Pre-fermentation treatments AND post-fermentation stabilisers (sulfites do both)
-(it.name IN ('Potassium Metabisulfite (K-meta)', 'Campden Tablets') 
- AND uc.name IN ('prefermentation-treatment', 'stabiliser')) OR
-
-  -- Post-fermentation stabilisers
-  (it.name = 'Potassium Sorbate' AND uc.name = 'stabiliser');
-
--- Stage Type Allowed Contexts
--- Defines which ingredient contexts are valid for each stage type
-INSERT OR IGNORE INTO stageTypeAllowedContexts (stageTypeID, contextID)
-SELECT st.stageTypeID, uc.contextID
-FROM stageTypes st, usageContexts uc
-WHERE
-  -- Must Preparation: fermentables, water chemistry, nutrients, prefermentation treatments, flavourants
-  (st.name = 'Must Preparation' 
-  AND uc.name IN ('fermentable', 'salt', 'nutrient', 'prefermentation-treatment', 'nonfermentable')) OR
-  
-  -- Fermentation: yeast/microbes, nutrients (step feeding)
-  (st.name = 'Fermentation' AND uc.name IN ('fermenter', 'nutrient')) OR
-  
-  -- Malolactic Fermentation: only LAB (malolactic context)
-  (st.name = 'Malolactic Fermentation' AND uc.name = 'malolactic') OR
-  
-  -- Stabilisation: only stabilisers
-  (st.name = 'Stabilisation' AND uc.name = 'stabiliser') OR
-  
-  -- Flavor Adjustment: sweeteners and flavourants (no nutrients - encourages unwanted fermentation)
-  (st.name = 'Flavor Adjustment' AND uc.name IN ('fermentable', 'nonfermentable')) OR
-  
-  -- Clarification & Aging: fining agents
-  (st.name = 'Clarification & Aging' AND uc.name = 'fining') OR
-  
-  -- Priming: priming sugars
-  (st.name = 'Priming' AND uc.name = 'primer') OR
-  
-  -- Packaging: packaging materials
-  (st.name = 'Packaging' AND uc.name = 'packaging');
+-- =============================================================================
+-- NOTES ON DUAL-PURPOSE ITEMS
+-- =============================================================================
+-- Some items serve both as ingredients and supplies:
+--   - Potassium Metabisulfite (K-Meta): Used IN recipes AND FOR sanitizing
+--   - Water: Used IN recipes AND FOR cleaning (if needed as supply)
+--
+-- These are handled via itemRoles:
+--   1. Create a single item entry in 'items' table
+--   2. Add TWO rows to itemRoles (one as 'ingredient', one as 'supply')
+--
+-- Example for K-Meta:
+--   INSERT INTO items (brand, name, unit, notes) 
+--   VALUES (NULL, 'Potassium Metabisulfite', 'g', 'Dual purpose: ingredient + sanitiser');
+--   
+--   INSERT INTO itemRoles (itemID, roleType, itemTypeID, categoryID)
+--   VALUES 
+--     (1, 'ingredient', <K-Meta ingredientTypeID>, 7),
+--     (1, 'supply', <K-Meta supplyTypeID>, 9);
+--
+-- This allows tracking one physical item with one inventory lot,
+-- but using it in multiple contexts.
+-- =============================================================================

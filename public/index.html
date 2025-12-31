@@ -13,46 +13,97 @@
     <script src="https://sql.js.org/dist/sql-wasm.js"></script>
 
     <script type="module">
+        // =====================================================================
+        // IMPORTS
+        // =====================================================================
         import BrewCode from '../modules/brewcode.js';
         import { renderSettingsPage, attachSettingsHandlers } from '../modules/settingsUI.js';
         import { renderNavigation, toggleMobileMenu } from '../modules/navigation.js';
-        import { toggleFilters } from '../modules/filterHelpers.js';
-        import { renderRecipesPage, renderRecipeDetail, filterRecipes } from '../modules/recipesPage.js';
-        import { renderBatchesPage, renderBatchDetail, filterBatches } from '../modules/batchesPage.js';
-        import { renderInventoryPage, renderInventoryDetail, applyInventoryFilters, updateCategoryDropdown } from '../modules/inventoryPage.js';
-        import { renderEquipmentPage, filterEquipmentBySearch, applyEquipmentFilters } from '../modules/equipmentPage.js';
         import { renderDashboardPage } from '../modules/dashboardPage.js';
-        import { showAddInventoryForm, showCreateNewItemForm, backToItemSelection, updateCategoryOptions, updateTypeOptions, toggleBrandInput, showCreateTypeInline, hideCreateTypeInline, createTypeInline, selectInventoryItem, toggleCostInput, updateCostCalculation } from '../modules/inventoryForms.js';
+        
+        // UI Helpers
+        import { showToast, showLoadingScreen, showError } from '../modules/uiHelpers.js';
+
+        // Format Helpers
+        import { getFormatters } from '../modules/formatHelpers.js';
+        
+        // Recipes
+        import { renderRecipesPage, renderRecipeDetail, filterRecipes } from '../modules/recipesPage.js';
+        
+        // Batches
+        import { renderBatchesPage, renderBatchDetail, filterBatches } from '../modules/batchesPage.js';
+        
+        // Inventory
+        import {
+            renderInventoryPage,
+            renderInventoryDetail,
+            applyInventoryFilters,
+            toggleFilters,
+            toggleDropdown,
+            handleMultiSelectAll
+        } from '../modules/inventoryPage.js';
+        
+        import {
+            showCreateItemForm,
+            updateCategoryOptionsForCreate,
+            updateTypeOptionsForCreate,
+            toggleOnDemandFields,
+            submitCreateItem,
+            showCreateTypeInline,
+            hideCreateTypeInline,
+            createTypeInline,
+            showAddLotForm,
+            updateCostLabel,
+            submitAddLot,
+            showEditItemForm,
+            toggleOnDemandFieldsEdit,
+            submitEditItem
+        } from '../modules/inventoryForms.js';
+        
+        // Equipment
+        import {
+            renderEquipmentPage,
+            filterEquipmentBySearch,
+            applyEquipmentFilters,
+            toggleDropdown as toggleEquipmentDropdown,
+            handleMultiSelectAll as handleEquipmentMultiSelectAll
+        } from '../modules/equipmentPage.js';
         import { showAddEquipmentForm, showEditEquipmentForm } from '../modules/equipmentForms.js';
+        
+        // Forms
         import { closeModal } from '../modules/formHelpers.js';
 
-        // ===== SESSION STATE =====
+        // =====================================================================
+        // SESSION STATE
+        // =====================================================================
         let sessionState = {
             hasUnsavedChanges: false,
             lastSaveTime: null,
             currentFilename: null,
-            isDatabaseLoaded: false
+            isDatabaseLoaded: false,
+            fileHandle: null  // ADDED: Store file handle for direct saves
         };
 
-        // Mark database as modified
+        // =====================================================================
+        // DATABASE CHANGE TRACKING
+        // =====================================================================
+        
         function markDatabaseModified() {
             sessionState.hasUnsavedChanges = true;
         }
 
-        // Mark database as saved
         function markDatabaseSaved(filename) {
             sessionState.hasUnsavedChanges = false;
             sessionState.lastSaveTime = new Date();
             sessionState.currentFilename = filename;
         }
 
-        // Wrap BrewCode methods to track changes
         function wrapBrewCodeForChangeTracking() {
             const methodsToWrap = [
                 ['batch', 'create'], ['batch', 'update'], ['batch', 'delete'],
                 ['batch', 'start'], ['batch', 'complete'], ['batch', 'abandon'],
                 ['stage', 'start'], ['stage', 'complete'], ['stage', 'skip'],
-                ['ingredient', 'recordUsage'], ['measurement', 'add'],
+                ['measurement', 'add'],
                 ['equipment', 'create'], ['equipment', 'update'],
                 ['equipment', 'assignToStage'], ['equipment', 'releaseFromStage'],
                 ['recipe', 'create'], ['recipe', 'update'], ['recipe', 'delete'],
@@ -62,17 +113,24 @@
             ];
 
             methodsToWrap.forEach(([namespace, method]) => {
-                const original = BrewCode[namespace][method];
-                BrewCode[namespace][method] = function(...args) {
-                    const result = original.apply(this, args);
-                    markDatabaseModified();
-                    return result;
-                };
+                if (BrewCode[namespace] && typeof BrewCode[namespace][method] === 'function') {
+                    const original = BrewCode[namespace][method];
+                    BrewCode[namespace][method] = function(...args) {
+                        const result = original.apply(this, args);
+                        markDatabaseModified();
+                        return result;
+                    };
+                } else {
+                    console.warn(`Method ${namespace}.${method} does not exist, skipping wrapping`);
+                }
             });
         }
 
-        // Save database to file
-        function saveDatabase() {
+        // =====================================================================
+        // DATABASE FILE OPERATIONS
+        // =====================================================================
+        
+        async function saveDatabase() {
             if (!sessionState.isDatabaseLoaded) {
                 alert('No database loaded to save');
                 return;
@@ -83,16 +141,22 @@
                 const data = db.export();
                 const blob = new Blob([data], { type: 'application/x-sqlite3' });
                 
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = sessionState.currentFilename || 'brewcode.db';
-                a.click();
-                
-                URL.revokeObjectURL(url);
-                
-                markDatabaseSaved(a.download);
-                showToast('✔ Database saved successfully', 'success');
+                // Check if File System Access API is available
+                if (window.showSaveFilePicker) {
+                    // Modern browsers with File System Access API
+                    if (sessionState.fileHandle) {
+                        // We have a file handle - write directly to it
+                        await writeToFileHandle(sessionState.fileHandle, blob);
+                        markDatabaseSaved(sessionState.currentFilename);
+                        showToast('✓ Database saved successfully', 'success');
+                    } else {
+                        // First save - show save dialog
+                        await saveAsNewFile(blob);
+                    }
+                } else {
+                    // Fallback for browsers without File System Access API (e.g., Safari)
+                    fallbackDownload(blob);
+                }
                 
                 // Refresh settings page if we're on it
                 if (window.brewcode.currentPage === 'settings') {
@@ -100,41 +164,207 @@
                 }
                 
             } catch (error) {
+                if (error.name === 'AbortError') {
+                    // User cancelled the save dialog
+                    console.log('Save cancelled by user');
+                    return;
+                }
                 console.error('Failed to save database:', error);
-                showToast('✕ Failed to save database', 'error');
+                showToast('✗ Failed to save database', 'error');
             }
         }
 
-        // Show toast notification
-        function showToast(message, type = 'info') {
-            const colors = {
-                success: 'bg-green-900/90 border-green-500 text-green-200',
-                error: 'bg-red-900/90 border-red-500 text-red-200',
-                info: 'bg-blue-900/90 border-blue-500 text-blue-200'
-            };
+        async function writeToFileHandle(fileHandle, blob) {
+            // Request permission if needed
+            const permission = await fileHandle.queryPermission({ mode: 'readwrite' });
+            if (permission !== 'granted') {
+                const newPermission = await fileHandle.requestPermission({ mode: 'readwrite' });
+                if (newPermission !== 'granted') {
+                    throw new Error('Permission to write file was denied');
+                }
+            }
 
-            const toast = document.createElement('div');
-            toast.className = `fixed top-4 right-4 ${colors[type]} border px-6 py-4 rounded-lg shadow-lg z-50 animate-fade-in`;
-            toast.textContent = message;
-            document.body.appendChild(toast);
+            // Create a writable stream
+            const writable = await fileHandle.createWritable();
             
-            setTimeout(() => {
-                toast.classList.add('animate-fade-out');
-                setTimeout(() => toast.remove(), 300);
-            }, 3000);
+            // Write the blob to the file
+            await writable.write(blob);
+            
+            // Close the file
+            await writable.close();
         }
 
-        // Check if this is first time user
+        async function saveAsNewFile(blob) {
+            try {
+                // Show save file picker
+                const fileHandle = await window.showSaveFilePicker({
+                    suggestedName: sessionState.currentFilename || 'brewcode.db',
+                    types: [{
+                        description: 'BrewCode Database',
+                        accept: { 'application/x-sqlite3': ['.db'] }
+                    }]
+                });
+
+                // Save the file handle for future saves
+                sessionState.fileHandle = fileHandle;
+                sessionState.currentFilename = fileHandle.name;
+
+                // Write to the file
+                await writeToFileHandle(fileHandle, blob);
+                
+                markDatabaseSaved(fileHandle.name);
+                showToast('✓ Database saved successfully', 'success');
+                
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    // User cancelled
+                    throw error;
+                }
+                console.error('Failed to save file:', error);
+                throw new Error('Failed to save database file');
+            }
+        }
+
+        function fallbackDownload(blob) {
+            // Fallback for browsers without File System Access API
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = sessionState.currentFilename || 'brewcode.db';
+            a.click();
+            
+            URL.revokeObjectURL(url);
+            
+            markDatabaseSaved(a.download);
+            showToast('✓ Database downloaded (Save dialog may not appear on subsequent saves in this browser)', 'success');
+        }
+
+        async function createNewDatabase() {
+            try {
+                showLoadingScreen('Creating new database...');
+                await BrewCode.init();
+                
+                sessionState.isDatabaseLoaded = true;
+                sessionState.currentFilename = 'brewcode.db';
+                sessionState.hasUnsavedChanges = true;
+                sessionState.lastSaveTime = null;
+                sessionState.fileHandle = null;
+                
+                markAsUsed();
+                wrapBrewCodeForChangeTracking();
+                launchMainApp('settings');  // CHANGED: Route to settings for new DB
+                
+                setTimeout(() => {
+                    showToast('💾 Remember to save your database in Settings when done!', 'info');
+                }, 2000);
+                
+            } catch (error) {
+                showError('Failed to create database', error);
+            }
+        }
+
+        async function loadExistingDatabase() {
+            // Check if File System Access API is available
+            if (window.showOpenFilePicker) {
+                await loadWithFileSystemAPI();
+            } else {
+                // Fallback for browsers without File System Access API
+                loadWithFileInput();
+            }
+        }
+
+        async function loadWithFileSystemAPI() {
+            try {
+                // Show open file picker
+                const [fileHandle] = await window.showOpenFilePicker({
+                    types: [{
+                        description: 'BrewCode Database',
+                        accept: { 'application/x-sqlite3': ['.db'] }
+                    }],
+                    multiple: false
+                });
+
+                showLoadingScreen('Loading database...');
+                
+                // Read the file
+                const file = await fileHandle.getFile();
+                await BrewCode.import(file);
+                
+                // ADDED: Store the file handle so we can save back to it
+                sessionState.fileHandle = fileHandle;
+                sessionState.isDatabaseLoaded = true;
+                sessionState.currentFilename = file.name;
+                sessionState.hasUnsavedChanges = false;
+                sessionState.lastSaveTime = new Date(file.lastModified);
+                
+                markAsUsed();
+                wrapBrewCodeForChangeTracking();
+                launchMainApp();
+                
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    // User cancelled
+                    console.log('Load cancelled by user');
+                    return;
+                }
+                showError('Failed to load database', error);
+            }
+        }
+
+        function loadWithFileInput() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.db';
+            
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                try {
+                    showLoadingScreen('Loading database...');
+                    await BrewCode.import(file);
+                    
+                    sessionState.isDatabaseLoaded = true;
+                    sessionState.currentFilename = file.name;
+                    sessionState.hasUnsavedChanges = false;
+                    sessionState.lastSaveTime = new Date(file.lastModified);
+                    sessionState.fileHandle = null;  // No file handle in fallback mode
+                    
+                    markAsUsed();
+                    wrapBrewCodeForChangeTracking();
+                    launchMainApp();
+                    
+                } catch (error) {
+                    showError('Failed to load database', error);
+                }
+            };
+            
+            input.click();
+        }
+
+        function loadNewDatabase() {
+            if (sessionState.hasUnsavedChanges) {
+                if (!confirm('You have unsaved changes. Load a new database anyway?')) {
+                    return;
+                }
+            }
+            // ADDED: Clear file handle when loading new database
+            sessionState.fileHandle = null;
+            loadExistingDatabase();
+        }
+
+        // =====================================================================
+        // FIRST TIME USER EXPERIENCE
+        // =====================================================================
+        
         function isFirstTimeUser() {
             return localStorage.getItem('brewcode_has_used') === null;
         }
 
-        // Mark as used
         function markAsUsed() {
             localStorage.setItem('brewcode_has_used', 'true');
         }
 
-        // Show welcome screen
         function showWelcomeScreen() {
             document.getElementById('app').innerHTML = `
                 <div class="min-h-screen flex items-center justify-center p-4">
@@ -187,99 +417,14 @@
             `;
         }
 
-        // Create new database
-        async function createNewDatabase() {
-            try {
-                showLoadingScreen('Creating new database...');
-                await BrewCode.init();
-                
-                sessionState.isDatabaseLoaded = true;
-                sessionState.currentFilename = 'brewcode.db';
-                sessionState.hasUnsavedChanges = true;
-                sessionState.lastSaveTime = null;
-                
-                markAsUsed();
-                wrapBrewCodeForChangeTracking();
-                launchMainApp();
-                
-                setTimeout(() => {
-                    showToast('💾 Remember to save your database in Settings when done!', 'info');
-                }, 2000);
-                
-            } catch (error) {
-                showError('Failed to create database', error);
-            }
+        // =====================================================================
+        // NAVIGATION
+        // =====================================================================
+        
+        function launchMainApp(initialPage = 'dashboard') {
+            navigate(initialPage);
         }
 
-        // Load existing database
-        async function loadExistingDatabase() {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.db';
-            
-            input.onchange = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-
-                try {
-                    showLoadingScreen('Loading database...');
-                    await BrewCode.import(file);
-                    
-                    sessionState.isDatabaseLoaded = true;
-                    sessionState.currentFilename = file.name;
-                    sessionState.hasUnsavedChanges = false;
-                    sessionState.lastSaveTime = new Date(file.lastModified);
-                    
-                    markAsUsed();
-                    wrapBrewCodeForChangeTracking();
-                    launchMainApp();
-                    
-                } catch (error) {
-                    showError('Failed to load database', error);
-                }
-            };
-            
-            input.click();
-        }
-
-        // Show loading screen
-        function showLoadingScreen(message) {
-            document.getElementById('app').innerHTML = `
-                <div class="min-h-screen flex items-center justify-center">
-                    <div class="text-center">
-                        <div class="animate-spin rounded-full h-16 w-16 border-4 border-amber-500 border-t-transparent mx-auto mb-4"></div>
-                        <p class="text-gray-400">${message}</p>
-                    </div>
-                </div>
-            `;
-        }
-
-        // Show error screen
-        function showError(title, error) {
-            document.getElementById('app').innerHTML = `
-                <div class="min-h-screen flex items-center justify-center p-4">
-                    <div class="max-w-2xl w-full">
-                        <div class="bg-red-900/20 border border-red-500 rounded-lg p-8">
-                            <h2 class="text-2xl font-bold text-red-500 mb-4">${title}</h2>
-                            <p class="text-gray-300 mb-4">${error.message}</p>
-                            <button 
-                                onclick="window.brewcode.showWelcomeScreen()"
-                                class="bg-gray-700 hover:bg-gray-600 text-white py-2 px-6 rounded-lg transition-colors"
-                            >
-                                ← Try Again
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        // Launch main app
-        function launchMainApp() {
-            navigate('dashboard');
-        }
-
-        // Navigate to pages
         function navigate(pageId) {
             window.brewcode.currentPage = pageId;
             
@@ -300,14 +445,55 @@
             (pages[pageId] || showDashboard)();
         }
 
-        // Page rendering functions
+        // =====================================================================
+        // PAGE RENDERERS
+        // =====================================================================
+        
+        // --- Dashboard ---
         function showDashboard() {
-            const content = renderDashboardPage(BrewCode);
+            const settings = BrewCode.settings.get();
+            const fmt = getFormatters(settings);
+            const content = renderDashboardPage(BrewCode, fmt);
             document.getElementById('app').innerHTML = 
                 renderNavigation('dashboard') + 
                 `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
         }
 
+        // --- Settings ---
+        function showSettings() {
+            const content = renderSettingsPage(BrewCode, sessionState);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('settings') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+            attachSettingsHandlers(BrewCode, () => {
+                console.log('Settings saved!');
+            });
+        }
+
+        // --- Recipes ---
+        function showRecipesPage() {
+            const content = renderRecipesPage(BrewCode);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('recipes') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+        }
+
+        function viewRecipe(recipeID) {
+            const content = renderRecipeDetail(BrewCode, recipeID);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('recipes') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+        }
+
+        function createBatchFromRecipe(recipeID) {
+            alert(`Creating batch from recipe ${recipeID} - this feature coming soon!`);
+        }
+
+        function showCreateRecipe() {
+            alert('Create recipe feature coming soon!');
+        }
+
+        // --- Batches ---
         function showBatchesPage() {
             const content = renderBatchesPage(BrewCode);
             document.getElementById('app').innerHTML = 
@@ -360,28 +546,7 @@
             }
         }
 
-        function showRecipesPage() {
-            const content = renderRecipesPage(BrewCode);
-            document.getElementById('app').innerHTML = 
-                renderNavigation('recipes') + 
-                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
-        }
-
-        function viewRecipe(recipeID) {
-            const content = renderRecipeDetail(BrewCode, recipeID);
-            document.getElementById('app').innerHTML = 
-                renderNavigation('recipes') + 
-                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
-        }
-
-        function createBatchFromRecipe(recipeID) {
-            alert(`Creating batch from recipe ${recipeID} - this feature coming soon!`);
-        }
-
-        function showCreateRecipe() {
-            alert('Create recipe feature coming soon!');
-        }
-
+        // --- Inventory ---
         function showInventoryPage() {
             const content = renderInventoryPage(BrewCode);
             document.getElementById('app').innerHTML = 
@@ -389,15 +554,27 @@
                 `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
         }
 
-        function viewInventoryDetail(lotID) {
-            const content = renderInventoryDetail(BrewCode, lotID);
+        function viewInventoryDetail(itemID) {
+            const content = renderInventoryDetail(BrewCode, itemID);
             document.getElementById('app').innerHTML = 
                 renderNavigation('inventory') + 
                 `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
         }
 
+        function showCreateItemFormWrapper() {
+            showCreateItemForm(BrewCode);
+        }
+
         function showAddInventory() {
-            showAddInventoryForm(BrewCode);
+            showCreateItemFormWrapper();
+        }
+
+        function showAddLot(itemID) {
+            showAddLotForm(itemID);
+        }
+
+        function showEditItem(itemID) {
+            showEditItemForm(itemID);
         }
 
         function markInventoryExpired(lotID) {
@@ -406,7 +583,7 @@
                     BrewCode.inventory.markExpired(lotID);
                     const lot = BrewCode.inventory.getLot(lotID);
                     if (lot) {
-                        viewInventoryDetail(lotID);
+                        viewInventoryDetail(lot.itemID);
                     } else {
                         showInventoryPage();
                     }
@@ -416,6 +593,7 @@
             }
         }
 
+        // --- Equipment ---
         function showEquipmentPage() {
             const content = renderEquipmentPage(BrewCode);
             document.getElementById('app').innerHTML = 
@@ -431,25 +609,127 @@
             showEditEquipmentForm(equipmentID);
         }
 
-        function showSettings() {
-            const content = renderSettingsPage(BrewCode, sessionState);
-            document.getElementById('app').innerHTML = 
-                renderNavigation('settings') + 
-                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
-            attachSettingsHandlers(BrewCode, () => {
-                console.log('Settings saved!');
-            });
-        }
+        // =====================================================================
+        // GLOBAL API (window.brewcode)
+        // =====================================================================
+        
+window.brewcode = {
+    // ============================================
+    // APP LIFECYCLE
+    // ============================================
+    showWelcomeScreen,
+    createNewDatabase,
+    loadExistingDatabase,
+    loadNewDatabase,
+    saveDatabase,
+    
+    // ============================================
+    // NAVIGATION
+    // ============================================
+    navigate,
+    toggleMobileMenu,
+    
+    // ============================================
+    // SETTINGS
+    // ============================================
+    showSettings,
+    
+    // ============================================
+    // UI UTILITIES (from uiHelpers)
+    // ============================================
+    showToast,
+    showLoadingScreen,
+    showError,
+    closeModal,
+    
+    // ============================================
+    // FILTER UTILITIES (from filterHelpers)
+    // ============================================
+    toggleDropdown,
+    handleMultiSelectAll,
+    toggleFilters,
+    
+    // ============================================
+    // DASHBOARD
+    // ============================================
+    // (no custom functions needed - uses renderDashboardPage directly)
+    
+    // ============================================
+    // RECIPES
+    // ============================================
+    showCreateRecipe,
+    viewRecipe,
+    createBatchFromRecipe,
+    filterRecipes,
+    
+    // ============================================
+    // BATCHES
+    // ============================================
+    viewBatch,
+    startBatch,
+    completeBatch,
+    startStage,
+    completeStage,
+    filterBatches,
+    
+    // ============================================
+    // INVENTORY
+    // ============================================
+    // Page rendering
+    renderInventoryPage,
+    renderInventoryDetail,
+    showInventoryPage,
+    viewInventoryDetail,
+    
+    // Inventory actions
+    showAddInventory,
+    showAddLot,
+    showEditItem,
+    markInventoryExpired,
+    
+    // Inventory filters
+    applyInventoryFilters,
+    
+    // Item creation form
+    showCreateItemFormWrapper,
+    updateCategoryOptionsForCreate,
+    updateTypeOptionsForCreate,
+    toggleOnDemandFields,
+    submitCreateItem,
+    showCreateTypeInline,
+    hideCreateTypeInline,
+    createTypeInline,
+    
+    // Add lot form
+    showAddLotForm,
+    updateCostLabel,
+    submitAddLot,
 
-        function loadNewDatabase() {
-            if (sessionState.hasUnsavedChanges) {
-                if (!confirm('You have unsaved changes. Load a new database anyway?')) {
-                    return;
-                }
-            }
-            loadExistingDatabase();
-        }
+    // Edit item form
+    showEditItemForm,
+    toggleOnDemandFieldsEdit,
+    submitEditItem,
+    
+    // ============================================
+    // EQUIPMENT
+    // ============================================
+    // Page rendering
+    renderEquipmentPage,
+    showEquipmentPage,
+    
+    // Equipment actions
+    showAddEquipment,
+    editEquipment,
+    
+    // Equipment filters
+    filterEquipmentBySearch,
+    applyEquipmentFilters
+};
 
+        // =====================================================================
+        // EVENT LISTENERS
+        // =====================================================================
+        
         // Warn before leaving with unsaved changes
         window.addEventListener('beforeunload', (e) => {
             if (sessionState.isDatabaseLoaded && sessionState.hasUnsavedChanges) {
@@ -469,52 +749,7 @@
             }
         });
 
-        // Expose functions globally
-        window.brewcode = {
-            showWelcomeScreen,
-            createNewDatabase,
-            loadExistingDatabase,
-            loadNewDatabase,
-            saveDatabase,
-            showSettings,
-            navigate,
-            toggleMobileMenu,
-            viewRecipe,
-            createBatchFromRecipe,
-            showCreateRecipe,
-            filterRecipes,
-            viewBatch,
-            startBatch,
-            completeBatch,
-            startStage,
-            completeStage,
-            filterBatches,
-            viewInventoryDetail,
-            showAddInventory,
-            markInventoryExpired,
-            toggleFilters,
-            applyInventoryFilters,
-            updateCategoryDropdown,
-            showAddInventoryForm,
-            showCreateNewItemForm,
-            backToItemSelection,
-            updateCategoryOptions,
-            updateTypeOptions,
-            toggleBrandInput,
-            showCreateTypeInline,
-            hideCreateTypeInline,
-            createTypeInline,
-            selectInventoryItem,
-            toggleCostInput,
-            updateCostCalculation,
-            showAddEquipment,
-            editEquipment,
-            filterEquipmentBySearch,
-            applyEquipmentFilters,
-            closeModal
-        };
-
-        // Initialize app
+        // Initialize app on page load
         window.addEventListener('load', () => {
             showWelcomeScreen();
         });

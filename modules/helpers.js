@@ -1,4 +1,6 @@
-// helpers.js
+// ============================================================================
+// helpers.js - Core database and utility helpers
+// ============================================================================
 
 /**
  * Convert SQL.js result to array of objects

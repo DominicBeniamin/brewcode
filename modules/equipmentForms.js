@@ -3,6 +3,7 @@
 import BrewCode from './brewcode.js';
 import { convert } from './conversions.js';
 import { renderNavigation } from './navigation.js';
+import { showToast } from './uiHelpers.js';
 
 /**
  * Show add equipment form
@@ -219,7 +220,7 @@ function showEditEquipmentForm(equipmentID) {
     const settings = BrewCode.settings.get();
 
     if (!equipment) {
-        alert('Equipment not found');
+        showToast('Equipment not found', 'error');
         window.brewcode.navigate('equipment');
         return;
     }
@@ -570,18 +571,18 @@ function attachEquipmentFormHandlers(mode, equipmentID = null) {
                     });
                 }
 
-                alert(`Successfully added ${quantity} equipment item${quantity > 1 ? 's' : ''}!`);
+                showToast(`✓ Successfully added ${quantity} equipment item${quantity > 1 ? 's' : ''}`, 'success');
             } else {
                 // Edit mode: update existing equipment
                 BrewCode.equipment.update(equipmentID, equipmentData);
-                alert('Equipment updated successfully!');
+                showToast('✓ Equipment updated successfully', 'success');
             }
             
             // Navigate back to equipment list
             window.brewcode.navigate('equipment');
             
         } catch (error) {
-            alert(`Failed to ${mode} equipment: ${error.message}`);
+            showToast(`✗ Failed to ${mode} equipment: ${error.message}`, 'error');
         }
     });
 }

@@ -2,7 +2,8 @@
 
 import { getFormatters } from './formatHelpers.js';
 import { convert } from './conversions.js';
-import { renderResponsiveFilters, renderFilterDropdown, renderSearchInput } from './filterHelpers.js';
+import { renderEmptyState } from './uiHelpers.js';
+import { renderFilterDropdown, renderMultiSelectDropdown, toggleDropdown, handleMultiSelectAll } from './filterHelpers.js';
 
 /**
  * Categorize equipment by type
@@ -22,29 +23,53 @@ function categorizeEquipmentType(type) {
 }
 
 /**
- * Sort equipment based on selected option
+ * Render equipment stats section
  */
-function sortEquipment(equipment, sortBy) {
-    const sorted = [...equipment];
-    
-    switch(sortBy) {
-        case 'name-asc':
-            return sorted.sort((a, b) => a.name.localeCompare(b.name));
-        case 'name-desc':
-            return sorted.sort((a, b) => b.name.localeCompare(a.name));
-        case 'type':
-            // Sort by type order: vessel, monitoring, lab, other
-            const typeOrder = { 'vessel': 1, 'monitoring': 2, 'lab': 3, 'other': 4 };
-            return sorted.sort((a, b) => {
-                const catA = categorizeEquipmentType(a.type);
-                const catB = categorizeEquipmentType(b.type);
-                const orderDiff = typeOrder[catA] - typeOrder[catB];
-                if (orderDiff !== 0) return orderDiff;
-                // Within same type, sort by name
-                return a.name.localeCompare(b.name);
-            });
-        default:
-            return sorted;
+function renderEquipmentStats(vessels, monitoring, lab, other) {
+    return `
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-blue-900/20 border border-blue-500 rounded-lg p-4">
+                <div class="text-2xl font-bold text-blue-400">${vessels.length}</div>
+                <div class="text-sm text-gray-400">Fermentation Vessels</div>
+            </div>
+            <div class="bg-green-900/20 border border-green-500 rounded-lg p-4">
+                <div class="text-2xl font-bold text-green-400">${monitoring.length}</div>
+                <div class="text-sm text-gray-400">Monitoring Devices</div>
+            </div>
+            <div class="bg-purple-900/20 border border-purple-500 rounded-lg p-4">
+                <div class="text-2xl font-bold text-purple-400">${lab.length}</div>
+                <div class="text-sm text-gray-400">Lab Equipment</div>
+            </div>
+            <div class="bg-gray-700/20 border border-gray-500 rounded-lg p-4">
+                <div class="text-2xl font-bold text-gray-400">${other.length}</div>
+                <div class="text-sm text-gray-400">Other</div>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Check if vessel is available (not currently used in active batch)
+ */
+function isVesselAvailable(BrewCode, equipmentID) {
+    try {
+        // Check equipmentUsage table to see if equipment is currently in use
+        const activeUsage = BrewCode.query(`
+            SELECT COUNT(*) as count 
+            FROM equipmentUsage eu
+            INNER JOIN batchStages bs ON eu.batchStageID = bs.batchStageID
+            INNER JOIN batches b ON bs.batchID = b.batchID
+            WHERE eu.equipmentID = ? 
+            AND eu.status = 'in-use'
+            AND b.status IN ('planning', 'active')
+            AND bs.status IN ('pending', 'active')
+        `, [equipmentID]);
+        
+        return activeUsage[0].count === 0;
+    } catch (error) {
+        // If query fails, just return null to hide availability
+        console.warn('Could not check vessel availability:', error);
+        return null;
     }
 }
 
@@ -64,10 +89,6 @@ function renderEquipmentPage(BrewCode) {
     const lab = allEquipment.filter(e => categorizeEquipmentType(e.type) === 'lab');
     const other = allEquipment.filter(e => categorizeEquipmentType(e.type) === 'other');
 
-    // Count by status
-    const activeEquipment = allEquipment.filter(e => e.isActive === 1);
-    const inactiveEquipment = allEquipment.filter(e => e.isActive === 0);
-
     if (allEquipment.length === 0) {
         return `
             <div class="mb-6">
@@ -81,90 +102,55 @@ function renderEquipmentPage(BrewCode) {
                     </button>
                 </div>
 
-                <!-- Equipment Stats (Empty State) -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div class="bg-blue-900/20 border border-blue-500 rounded-lg p-4">
-                        <div class="text-2xl font-bold text-blue-400">0</div>
-                        <div class="text-sm text-gray-400">Fermentation Vessels</div>
-                    </div>
-                    <div class="bg-green-900/20 border border-green-500 rounded-lg p-4">
-                        <div class="text-2xl font-bold text-green-400">0</div>
-                        <div class="text-sm text-gray-400">Monitoring Devices</div>
-                    </div>
-                    <div class="bg-purple-900/20 border border-purple-500 rounded-lg p-4">
-                        <div class="text-2xl font-bold text-purple-400">0</div>
-                        <div class="text-sm text-gray-400">Lab Equipment</div>
-                    </div>
-                    <div class="bg-gray-700/20 border border-gray-500 rounded-lg p-4">
-                        <div class="text-2xl font-bold text-gray-400">0</div>
-                        <div class="text-sm text-gray-400">Other</div>
-                    </div>
-                </div>
+                ${renderEquipmentStats(vessels, monitoring, lab, other)}
 
-                <!-- Search Bar -->
+                <!-- Search Bar (Disabled) -->
                 <div class="mb-6">
                     <input 
                         type="text"
                         id="equipmentSearch"
                         placeholder="Search equipment by name or type..."
                         disabled
-                        class="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-amber-500 focus:outline-none opacity-50"
+                        class="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 opacity-50 cursor-not-allowed"
                     />
                 </div>
 
-                <!-- Filters and Sort (Disabled State) -->
-                ${renderResponsiveFilters('equipmentFilters', `                                 
-                    ${renderFilterDropdown({
-                        id: 'equipmentSortBy',
-                        label: 'Sort by',
-                        onChange: 'window.brewcode.applyEquipmentFilters()',
-                        options: [
-                            { value: 'name-asc', label: 'Name, A-Z' },
-                            { value: 'name-desc', label: 'Name, Z-A' },
-                            { value: 'type', label: 'Type' }
-                        ]
-                    })}
+                <!-- Filters (Disabled) -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 opacity-50 pointer-events-none">
+                    <div class="flex-shrink-0">
+                        ${renderFilterDropdown({
+                            id: 'equipmentSortBy',
+                            label: '',
+                            onChange: 'window.brewcode.applyEquipmentFilters()',
+                            options: [
+                                { value: 'name-asc', label: 'Name, A-Z' },
+                                { value: 'name-desc', label: 'Name, Z-A' },
+                                { value: 'type', label: 'Type' }
+                            ]
+                        })}
+                    </div>
                     
-                    ${renderFilterDropdown({
-                        id: 'equipmentStatusFilter',
-                        label: 'Status',
-                        onChange: 'window.brewcode.applyEquipmentFilters()',
-                        options: [
-                            { value: 'active', label: `Active (${activeEquipment.length})` },
-                            { value: 'inactive', label: `Inactive (${inactiveEquipment.length})` },
-                            { value: 'all', label: `All (${allEquipment.length})` }
-                        ]
-                    })}
-                    
-                    ${renderFilterDropdown({
-                        id: 'equipmentTypeFilter',
+                    ${renderMultiSelectDropdown({
+                        id: 'equipmentTypeDropdown',
                         label: 'Type',
-                        onChange: 'window.brewcode.applyEquipmentFilters()',
                         options: [
-                            { value: 'all', label: 'All Types' },
-                            { value: 'vessel', label: `Vessels (${vessels.length})` },
-                            { value: 'monitoring', label: `Monitoring (${monitoring.length})` },
-                            { value: 'lab', label: `Lab (${lab.length})` },
-                            { value: 'other', label: `Other (${other.length})` }
-                        ]
+                            { value: 'vessel', label: 'Vessels (0)' },
+                            { value: 'monitoring', label: 'Monitoring (0)' },
+                            { value: 'lab', label: 'Lab (0)' },
+                            { value: 'other', label: 'Other (0)' }
+                        ],
+                        onChange: 'window.brewcode.applyEquipmentFilters'
                     })}
-                `)}
+                </div>
             </div>
 
-            <!-- Empty State Message -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-12 text-center">
-                <div class="text-6xl mb-4">🔧</div>
-                <h3 class="text-2xl font-bold text-white mb-2">No Equipment Yet</h3>
-                <p class="text-gray-400 mb-6 max-w-md mx-auto">
-                    Start tracking your brewing equipment like fermenters, hydrometers, and monitoring devices.
-                </p>
-                <button 
-                    onclick="window.brewcode.showAddEquipment()"
-                    class="bg-amber-600 hover:bg-amber-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-                >
-                    + Add Your First Equipment
-                </button>
-            </div>
+            ${renderEmptyState({
+                icon: '🔧',
+                title: 'No Equipment Yet',
+                description: 'Start tracking your brewing equipment like fermenters, hydrometers, and monitoring devices.',
+                buttonLabel: '+ Add Your First Equipment',
+                buttonAction: 'window.brewcode.showAddEquipment()'
+            })}
         `;
     }
 
@@ -180,25 +166,7 @@ function renderEquipmentPage(BrewCode) {
                 </button>
             </div>
 
-            <!-- Equipment Stats -->
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div class="bg-blue-900/20 border border-blue-500 rounded-lg p-4">
-                    <div class="text-2xl font-bold text-blue-400">${vessels.length}</div>
-                    <div class="text-sm text-gray-400">Fermentation Vessels</div>
-                </div>
-                <div class="bg-green-900/20 border border-green-500 rounded-lg p-4">
-                    <div class="text-2xl font-bold text-green-400">${monitoring.length}</div>
-                    <div class="text-sm text-gray-400">Monitoring Devices</div>
-                </div>
-                <div class="bg-purple-900/20 border border-purple-500 rounded-lg p-4">
-                    <div class="text-2xl font-bold text-purple-400">${lab.length}</div>
-                    <div class="text-sm text-gray-400">Lab Equipment</div>
-                </div>
-                <div class="bg-gray-700/20 border border-gray-500 rounded-lg p-4">
-                    <div class="text-2xl font-bold text-gray-400">${other.length}</div>
-                    <div class="text-sm text-gray-400">Other</div>
-                </div>
-            </div>
+            ${renderEquipmentStats(vessels, monitoring, lab, other)}
 
             <!-- Search Bar -->
             <div class="mb-6">
@@ -212,62 +180,36 @@ function renderEquipmentPage(BrewCode) {
             </div>
 
             <!-- Filters and Sort -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <!-- Sort By -->
-                <div>
-                    <label class="block text-sm font-semibold text-gray-300 mb-2">
-                        Sort by
-                    </label>
-                    <select 
-                        id="equipmentSortBy"
-                        onchange="window.brewcode.applyEquipmentFilters()"
-                        class="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-amber-500 focus:outline-none"
-                    >
-                        <option value="name-asc">Name, A-Z</option>
-                        <option value="name-desc">Name, Z-A</option>
-                        <option value="type">Type</option>
-                    </select>
-                </div>
-
-                <!-- Status Filter -->
-                <div>
-                    <label class="block text-sm font-semibold text-gray-300 mb-2">
-                        Status
-                    </label>
-                    <select 
-                        id="equipmentStatusFilter"
-                        onchange="window.brewcode.applyEquipmentFilters()"
-                        class="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-amber-500 focus:outline-none"
-                    >
-                        <option value="active">Active (${activeEquipment.length})</option>
-                        <option value="inactive">Inactive (${inactiveEquipment.length})</option>
-                        <option value="all">All (${allEquipment.length})</option>
-                    </select>
-                </div>
-
-                <!-- Type Filter -->
-                <div>
-                    <label class="block text-sm font-semibold text-gray-300 mb-2">
-                        Type
-                    </label>
-                    <select 
-                        id="equipmentTypeFilter"
-                        onchange="window.brewcode.applyEquipmentFilters()"
-                        class="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-amber-500 focus:outline-none"
-                    >
-                        <option value="all">All Types</option>
-                        <option value="vessel">Fermentation Vessels (${vessels.length})</option>
-                        <option value="monitoring">Monitoring Devices (${monitoring.length})</option>
-                        <option value="lab">Lab Equipment (${lab.length})</option>
-                        <option value="other">Other (${other.length})</option>
-                    </select>
-                </div>
+            <div class="flex flex-wrap gap-3 mb-6">
+                ${renderFilterDropdown({
+                    id: 'equipmentSortBy',
+                    label: '',
+                    onChange: 'window.brewcode.applyEquipmentFilters()',
+                    options: [
+                        { value: 'name-asc', label: 'Name, A-Z' },
+                        { value: 'name-desc', label: 'Name, Z-A' },
+                        { value: 'type', label: 'Type' }
+                    ],
+                    defaultValue: 'name-asc'
+                })}
+                
+                ${renderMultiSelectDropdown({
+                    id: 'equipmentTypeDropdown',
+                    label: 'Type',
+                    options: [
+                        { value: 'vessel', label: `Vessels (${vessels.length})` },
+                        { value: 'monitoring', label: `Monitoring (${monitoring.length})` },
+                        { value: 'lab', label: `Lab (${lab.length})` },
+                        { value: 'other', label: `Other (${other.length})` }
+                    ],
+                    onChange: 'window.brewcode.applyEquipmentFilters'
+                })}
             </div>
         </div>
 
         <!-- Equipment List -->
         <div class="space-y-4" id="equipmentList">
-            ${allEquipment.map(equipment => renderEquipmentCard(equipment, fmt, settings)).join('')}
+            ${allEquipment.map(equipment => renderEquipmentCard(equipment, fmt, settings, BrewCode)).join('')}
         </div>
     `;
 }
@@ -277,9 +219,10 @@ function renderEquipmentPage(BrewCode) {
  * @param {Object} equipment - Equipment object
  * @param {Object} fmt - Formatters object
  * @param {Object} settings - User settings
+ * @param {Object} BrewCode - BrewCode API instance
  * @returns {string} HTML for equipment card
  */
-function renderEquipmentCard(equipment, fmt, settings) {
+function renderEquipmentCard(equipment, fmt, settings, BrewCode) {
     const category = categorizeEquipmentType(equipment.type);
     
     const categoryColors = {
@@ -298,6 +241,9 @@ function renderEquipmentCard(equipment, fmt, settings) {
 
     const cardColor = categoryColors[category] || 'border-gray-500 bg-gray-800';
     const icon = categoryIcons[category] || '🔧';
+
+    // Check availability for vessels
+    const isAvailable = category === 'vessel' ? isVesselAvailable(BrewCode, equipment.equipmentID) : null;
 
     // Format calibration temperature if present
     let calibrationTempDisplay = null;
@@ -330,7 +276,6 @@ function renderEquipmentCard(equipment, fmt, settings) {
             data-equipment-category="${category}"
             data-equipment-name="${equipment.name.toLowerCase()}"
             data-equipment-type="${equipment.type.toLowerCase()}"
-            data-equipment-status="${equipment.isActive === 1 ? 'active' : 'inactive'}"
         >
             <div class="flex justify-between items-start mb-4">
                 <div class="flex-1">
@@ -355,12 +300,14 @@ function renderEquipmentCard(equipment, fmt, settings) {
 
             <!-- Equipment Details -->
             <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                <div>
-                    <div class="text-gray-400">Status</div>
-                    <div class="text-white font-medium">
-                        ${equipment.isActive ? '✅ Active' : '❌ Inactive'}
+                ${category === 'vessel' && isAvailable !== null ? `
+                    <div>
+                        <div class="text-gray-400">Availability</div>
+                        <div class="text-white font-medium">
+                            ${isAvailable ? '✅ Available' : '🔒 In Use'}
+                        </div>
                     </div>
-                </div>                
+                ` : ''}
                 
                 ${equipment.capacityL ? `
                     <div>
@@ -380,7 +327,6 @@ function renderEquipmentCard(equipment, fmt, settings) {
                         <div class="text-white font-medium">${calibrationTempDisplay}</div>
                     </div>
                 ` : ''}
-
             </div>
 
             ${equipment.notes ? `
@@ -398,27 +344,26 @@ function renderEquipmentCard(equipment, fmt, settings) {
  */
 function applyEquipmentFilters() {
     const sortBy = document.getElementById('equipmentSortBy').value;
-    const statusFilter = document.getElementById('equipmentStatusFilter').value;
-    const typeFilter = document.getElementById('equipmentTypeFilter').value;
-    const searchQuery = document.getElementById('equipmentSearch').value.toLowerCase();
+    const searchQuery = document.getElementById('equipmentSearch')?.value.toLowerCase() || '';
+    
+    // Get selected values from multi-select dropdowns
+    const typeCheckboxes = document.querySelectorAll('#equipmentTypeDropdown input[type="checkbox"]:checked');
+    const selectedTypes = Array.from(typeCheckboxes).map(cb => cb.value);
     
     const cards = Array.from(document.querySelectorAll('[data-equipment-name]'));
     
     // First, filter cards based on criteria
     cards.forEach(card => {
         const category = card.dataset.equipmentCategory;
-        const status = card.dataset.equipmentStatus;
         const name = card.dataset.equipmentName;
         const type = card.dataset.equipmentType;
         
         let visible = true;
         
-        // Apply status filter
-        if (statusFilter === 'active' && status !== 'active') visible = false;
-        if (statusFilter === 'inactive' && status !== 'inactive') visible = false;
-        
         // Apply type filter
-        if (typeFilter !== 'all' && category !== typeFilter) visible = false;
+        if (selectedTypes.length > 0 && !selectedTypes.includes('all')) {
+            if (!selectedTypes.includes(category)) visible = false;
+        }
         
         // Apply search filter
         if (searchQuery && !name.includes(searchQuery) && !type.includes(searchQuery)) {
@@ -465,5 +410,7 @@ function filterEquipmentBySearch() {
 export { 
     renderEquipmentPage,
     filterEquipmentBySearch,
-    applyEquipmentFilters
+    applyEquipmentFilters,
+    toggleDropdown,
+    handleMultiSelectAll
 };

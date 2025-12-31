@@ -1,4 +1,6 @@
+// ============================================================================
 // formHelpers.js - Reusable form components and utilities
+// ============================================================================
 
 /**
  * Render a modal wrapper for forms
@@ -249,46 +251,6 @@ function renderFormButtons(options = {}) {
 }
 
 /**
- * Show a success message
- * @param {string} message - Success message
- */
-function showSuccessMessage(message) {
-    const alert = document.createElement('div');
-    alert.className = 'fixed top-4 right-4 bg-green-900/90 border border-green-500 text-green-200 px-6 py-4 rounded-lg shadow-lg z-50';
-    alert.innerHTML = `
-        <div class="flex items-center gap-3">
-            <span class="text-2xl">✓</span>
-            <span>${message}</span>
-        </div>
-    `;
-    document.body.appendChild(alert);
-    
-    setTimeout(() => {
-        alert.remove();
-    }, 3000);
-}
-
-/**
- * Show an error message
- * @param {string} message - Error message
- */
-function showErrorMessage(message) {
-    const alert = document.createElement('div');
-    alert.className = 'fixed top-4 right-4 bg-red-900/90 border border-red-500 text-red-200 px-6 py-4 rounded-lg shadow-lg z-50';
-    alert.innerHTML = `
-        <div class="flex items-center gap-3">
-            <span class="text-2xl">✕</span>
-            <span>${message}</span>
-        </div>
-    `;
-    document.body.appendChild(alert);
-    
-    setTimeout(() => {
-        alert.remove();
-    }, 5000);
-}
-
-/**
  * Close a modal
  * @param {string} modalId - Modal ID to close
  */
@@ -316,8 +278,6 @@ export {
     renderDateField,
     renderTextareaField,
     renderFormButtons,
-    showSuccessMessage,
-    showErrorMessage,
     closeModal,
     getTodayDate
 };

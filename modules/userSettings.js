@@ -80,6 +80,11 @@ function updateUserSettings(db, updates) {
             if (typeof value !== 'string' || value.trim() === '') {
                 throw new Error('language must be a non-empty string');
             }
+        } else if (key === 'currencySymbol') {
+            // currencySymbol can be 1-3 characters
+            if (typeof value !== 'string' || value.trim() === '' || value.length > 3) {
+                throw new Error('currencySymbol must be a string between 1-3 characters');
+            }
         } else {
             throw new Error(`Unknown setting: ${key}`);
         }
@@ -137,6 +142,20 @@ function initializeDefaultSettings(db) {
     const locale = navigator.language || 'en-US';
     const country = locale.split('-')[1] || 'US';
     
+    // Detect currency symbol based on locale
+    let currencySymbol = '€'; // Default to Euro
+    if (country === 'US' || country === 'CA' || country === 'AU') {
+        currencySymbol = '$';
+    } else if (country === 'GB') {
+        currencySymbol = '£';
+    } else if (country === 'DK') {
+        currencySymbol = 'kr';
+    } else if (country === 'SE' || country === 'NO') {
+        currencySymbol = 'kr';
+    } else if (country === 'CH') {
+        currencySymbol = 'CHF';
+    }
+    
     // Smart defaults based on locale
     const defaults = {
         temperatureUnit: (country === 'US') ? 'f' : 'c',
@@ -147,14 +166,15 @@ function initializeDefaultSettings(db) {
                    (country === 'GB') ? 'uk' : 'iso',
         timeFormat: (country === 'US') ? '12h' : '24h',
         theme: 'dark',
-        language: locale.split('-')[0] || 'en'
+        language: locale.split('-')[0] || 'en',
+        currencySymbol: currencySymbol
     };
     
     try {
         const sql = `
             INSERT OR REPLACE INTO userSettings 
-            (settingsID, temperatureUnit, measurementSystem, densityUnit, dateFormat, timeFormat, theme, language)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+            (settingsID, temperatureUnit, measurementSystem, densityUnit, dateFormat, timeFormat, theme, language, currencySymbol)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         
         db.run(sql, [
@@ -164,7 +184,8 @@ function initializeDefaultSettings(db) {
             defaults.dateFormat,
             defaults.timeFormat,
             defaults.theme,
-            defaults.language
+            defaults.language,
+            defaults.currencySymbol
         ]);
         
         console.log('Initialized default settings based on locale:', locale);

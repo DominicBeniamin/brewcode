@@ -7,8 +7,8 @@ import * as batchManager from './batchManager.js';
 import * as recipeManager from './recipeManager.js';
 import * as equipmentManager from './equipmentManager.js';
 import * as inventoryManager from './inventoryManager.js';
-import * as ingredientManager from './ingredientManager.js';
-import * as supplyManager from './supplyManager.js';
+import * as itemManager from './itemManager.js';
+import * as ingredientTypeManager from './ingredientTypeManager.js';
 import * as supplyTypeManager from './supplyTypeManager.js';
 import * as conversions from './conversions.js';
 import * as fermentation from './fermentation.js';
@@ -21,66 +21,28 @@ import * as userSettings from './userSettings.js';
  * // Initialize
  * await BrewCode.init();
  * 
+ * // Create an item (ingredient, supply, or both)
+ * const item = BrewCode.item.create({
+ *   name: "Apple Juice",
+ *   unit: "L",
+ *   brand: "K Classic",
+ *   onDemand: 0
+ * });
+ * 
+ * // Add ingredient role
+ * BrewCode.item.addRole(item.itemID, 'ingredient', 5, 1);
+ * 
  * // Create a batch
- * const batch = await BrewCode.batch.create({
+ * const batch = BrewCode.batch.create({
  *   recipeID: 5,
  *   name: "Traditional Mead - Batch #1",
  *   actualBatchSizeL: 10
  * });
- * 
- * // Start the batch
- * await BrewCode.batch.start(batch.batchID);
- * 
- * // Export database
- * await BrewCode.export('backup.db');
  */
 class BrewCodeAPI {
     constructor() {
         this.db = null;
         this.initialized = false;
-        
-        // Initialize supply.type after class fields are set up
-        this.supply.type = {
-            /**
-             * Create supply type
-             */
-            create: (typeData) => {
-                this._requireInit();
-                return supplyTypeManager.createSupplyType(this.db, typeData);
-            },
-
-            /**
-             * Get supply type by ID
-             */
-            get: (supplyTypeID) => {
-                this._requireInit();
-                return supplyTypeManager.getSupplyType(this.db, supplyTypeID);
-            },
-
-            /**
-             * Get all supply types
-             */
-            getAll: (options = {}) => {
-                this._requireInit();
-                return supplyTypeManager.getAllSupplyTypes(this.db, options);
-            },
-
-            /**
-             * Update supply type
-             */
-            update: (supplyTypeID, updates) => {
-                this._requireInit();
-                return supplyTypeManager.updateSupplyType(this.db, supplyTypeID, updates);
-            },
-
-            /**
-             * Set supply type active status
-             */
-            setStatus: (supplyTypeID, isActive) => {
-                this._requireInit();
-                return supplyTypeManager.setSupplyTypeStatus(this.db, supplyTypeID, isActive);
-            }
-        };
     }
 
     // ============================================
@@ -146,29 +108,191 @@ class BrewCodeAPI {
         return this.db;
     }
 
-   /**
- * Check if BrewCode is initialized
- * @returns {boolean}
- */
-isInitialized() {
-    return this.initialized;
-}
+    /**
+     * Check if BrewCode is initialized
+     * @returns {boolean}
+     */
+    isInitialized() {
+        return this.initialized;
+    }
 
-/**
- * Execute raw SQL query (advanced users only)
- * @param {string} sql - SQL query
- * @param {Array} [params] - Query parameters
- * @returns {Array} Query results
- */
-query(sql, params = []) {
-    this._requireInit();
-    const result = this.db.exec(sql, params);
-    return resultToObjects(result);
-}
+    /**
+     * Execute raw SQL query (advanced users only)
+     * @param {string} sql - SQL query
+     * @param {Array} [params] - Query parameters
+     * @returns {Array} Query results
+     */
+    query(sql, params = []) {
+        this._requireInit();
+        const result = this.db.exec(sql, params);
+        return resultToObjects(result);
+    }
 
-// ============================================
-// BATCH MANAGEMENT
-// ============================================
+    // ============================================
+    // UNIFIED ITEM MANAGEMENT
+    // ============================================
+
+    item = {
+        /**
+         * Create a new item (can be ingredient, supply, or both)
+         */
+        create: (itemData) => {
+            this._requireInit();
+            return itemManager.createItem(this.db, itemData);
+        },
+
+        /**
+         * Get item by ID with all its roles
+         */
+        get: (itemID) => {
+            this._requireInit();
+            return itemManager.getItem(this.db, itemID);
+        },
+
+        /**
+         * Get all items with optional filters
+         */
+        getAll: (options = {}) => {
+            this._requireInit();
+            return itemManager.getAllItems(this.db, options);
+        },
+
+        /**
+         * Update item (brand, name, unit, onDemand pricing, notes)
+         */
+        update: (itemID, updates) => {
+            this._requireInit();
+            return itemManager.updateItem(this.db, itemID, updates);
+        },
+
+        /**
+         * Set item active status
+         */
+        setStatus: (itemID, isActive) => {
+            this._requireInit();
+            return itemManager.setItemStatus(this.db, itemID, isActive);
+        },
+
+        /**
+         * Get all roles for an item
+         */
+        getRoles: (itemID) => {
+            this._requireInit();
+            return itemManager.getItemRoles(this.db, itemID);
+        },
+
+        /**
+         * Add a role (ingredient or supply) to an item
+         */
+        addRole: (itemID, roleType, itemTypeID, categoryID) => {
+            this._requireInit();
+            return itemManager.addItemRole(this.db, itemID, roleType, itemTypeID, categoryID);
+        },
+
+        /**
+         * Remove a role from an item
+         */
+        removeRole: (itemID, roleType) => {
+            this._requireInit();
+            return itemManager.removeItemRole(this.db, itemID, roleType);
+        }
+    };
+
+    // ============================================
+    // INGREDIENT TYPE MANAGEMENT
+    // ============================================
+
+    ingredientType = {
+        /**
+         * Create ingredient type
+         */
+        create: (ingredientTypeData) => {
+            this._requireInit();
+            return ingredientTypeManager.createIngredientType(this.db, ingredientTypeData);
+        },
+
+        /**
+         * Get ingredient type by ID
+         */
+        get: (ingredientTypeID) => {
+            this._requireInit();
+            return ingredientTypeManager.getIngredientType(this.db, ingredientTypeID);
+        },
+
+        /**
+         * Get all ingredient types
+         */
+        getAll: (options = {}) => {
+            this._requireInit();
+            return ingredientTypeManager.getAllIngredientTypes(this.db, options);
+        },
+
+        /**
+         * Update ingredient type
+         */
+        update: (ingredientTypeID, updates) => {
+            this._requireInit();
+            return ingredientTypeManager.updateIngredientType(this.db, ingredientTypeID, updates);
+        },
+
+        /**
+         * Set ingredient type active status
+         */
+        setStatus: (ingredientTypeID, isActive) => {
+            this._requireInit();
+            return ingredientTypeManager.setIngredientTypeStatus(this.db, ingredientTypeID, isActive);
+        }
+    };
+
+    // ============================================
+    // SUPPLY TYPE MANAGEMENT
+    // ============================================
+
+    supplyType = {
+        /**
+         * Create supply type
+         */
+        create: (supplyTypeData) => {
+            this._requireInit();
+            return supplyTypeManager.createSupplyType(this.db, supplyTypeData);
+        },
+
+        /**
+         * Get supply type by ID
+         */
+        get: (supplyTypeID) => {
+            this._requireInit();
+            return supplyTypeManager.getSupplyType(this.db, supplyTypeID);
+        },
+
+        /**
+         * Get all supply types
+         */
+        getAll: (options = {}) => {
+            this._requireInit();
+            return supplyTypeManager.getAllSupplyTypes(this.db, options);
+        },
+
+        /**
+         * Update supply type
+         */
+        update: (supplyTypeID, updates) => {
+            this._requireInit();
+            return supplyTypeManager.updateSupplyType(this.db, supplyTypeID, updates);
+        },
+
+        /**
+         * Set supply type active status
+         */
+        setStatus: (supplyTypeID, isActive) => {
+            this._requireInit();
+            return supplyTypeManager.setSupplyTypeStatus(this.db, supplyTypeID, isActive);
+        }
+    };
+
+    // ============================================
+    // BATCH MANAGEMENT
+    // ============================================
 
     batch = {
         /**
@@ -287,118 +411,6 @@ query(sql, params = []) {
         skip: (batchStageID) => {
             this._requireInit();
             return batchManager.skipBatchStage(this.db, batchStageID);
-        }
-    };
-
-    // ============================================
-    // INGREDIENT TRACKING
-    // ============================================
-
-    ingredient = {
-        /**
-         * Record ingredient usage for a batch
-         */
-        recordUsage: (batchIngredientID, usageData) => {
-            this._requireInit();
-            return batchManager.recordIngredientUsage(this.db, batchIngredientID, usageData);
-        },
-
-        // ============================================
-        // INGREDIENT TYPE METHODS (generic types)
-        // ============================================
-        
-        /**
-         * Create ingredient type
-         */
-        createType: (ingredientData) => {
-            this._requireInit();
-            return ingredientManager.createIngredientType(this.db, ingredientData);
-        },
-
-        /**
-         * Get ingredient type by ID
-         */
-        getType: (ingredientTypeID) => {
-            this._requireInit();
-            return ingredientManager.getIngredientType(this.db, ingredientTypeID);
-        },
-
-        /**
-         * Get all ingredient types
-         */
-        getAllTypes: (options = {}) => {
-            this._requireInit();
-            return ingredientManager.getAllIngredientTypes(this.db, options);
-        },
-
-        /**
-         * Update ingredient type
-         */
-        updateType: (ingredientTypeID, updates) => {
-            this._requireInit();
-            return ingredientManager.updateIngredientType(this.db, ingredientTypeID, updates);
-        },
-
-        /**
-         * Set ingredient type active status
-         */
-        setTypeStatus: (ingredientTypeID, isActive) => {
-            this._requireInit();
-            return ingredientManager.setIngredientTypeStatus(this.db, ingredientTypeID, isActive);
-        },
-
-        // ============================================
-        // INGREDIENT METHODS (specific branded items)
-        // ============================================
-
-        /**
-         * Create ingredient
-         */
-        create: (ingredientData) => {
-            this._requireInit();
-            console.log('brewcode.js - ingredient.create called with:', ingredientData);
-            console.log('brewcode.js - ingredientData.ingredientName:', ingredientData.ingredientName);
-            return ingredientManager.createIngredient(this.db, ingredientData);
-        },
-
-        /**
-         * Get ingredient by ID
-         */
-        get: (ingredientID) => {
-            this._requireInit();
-            return ingredientManager.getIngredient(this.db, ingredientID);
-        },
-
-        /**
-         * Get ingredients by ingredient type
-         */
-        getByType: (ingredientTypeID, options = {}) => {
-            this._requireInit();
-            return ingredientManager.getIngredientsByIngredientType(this.db, ingredientTypeID, options);
-        },
-
-        /**
-         * Get all ingredients
-         */
-        getAll: (options = {}) => {
-            this._requireInit();
-            return ingredientManager.getAllIngredients(this.db, options);
-        },
-
-        /**
-         * Update ingredient
-         */
-        update: (ingredientID, updates) => {
-            this._requireInit();
-            return ingredientManager.updateIngredient(this.db, ingredientID, updates);
-        },
-
-        /**
-         * Set ingredient active status
-         */
-        setStatus: (ingredientID, isActive) => {
-            this._requireInit();
-            return ingredientManager.setIngredientStatus(this.db, ingredientID, isActive);
         }
     };
 
@@ -610,7 +622,7 @@ query(sql, params = []) {
 
     inventory = {
         /**
-         * Add inventory lot
+         * Add inventory lot for a tracked item
          */
         addLot: (lotData) => {
             this._requireInit();
@@ -626,11 +638,11 @@ query(sql, params = []) {
         },
 
         /**
-         * Get inventory for a ingredient (FIFO ordered)
+         * Get inventory for an item (FIFO ordered)
          */
-        getForIngredient: (ingredientID, options = {}) => {
+        getForItem: (itemID, options = {}) => {
             this._requireInit();
-            return inventoryManager.getInventoryForIngredient(this.db, ingredientID, options);
+            return inventoryManager.getInventoryForItem(this.db, itemID, options);
         },
 
         /**
@@ -644,9 +656,9 @@ query(sql, params = []) {
         /**
          * Consume from inventory (FIFO)
          */
-        consume: (ingredientID, quantity, unit) => {
+        consume: (itemID, quantity, unit) => {
             this._requireInit();
-            return inventoryManager.consumeFromInventory(this.db, ingredientID, quantity, unit);
+            return inventoryManager.consumeFromInventory(this.db, itemID, quantity, unit);
         },
 
         /**
@@ -667,76 +679,12 @@ query(sql, params = []) {
     };
 
     // ============================================
-    // SUPPLY MANAGEMENT
-    // ============================================
-
-    supply = {
-        /**
-         * Create supply
-         */
-        create: (supplyData) => {
-            this._requireInit();
-            return supplyManager.createSupply(this.db, supplyData);
-        },
-
-        /**
-         * Get supply by ID
-         */
-        get: (supplyID) => {
-            this._requireInit();
-            return supplyManager.getSupply(this.db, supplyID);
-        },
-
-        /**
-         * Get supplies by type
-         */
-        getByType: (supplyTypeID, options = {}) => {
-            this._requireInit();
-            return supplyManager.getSuppliesBySupplyType(this.db, supplyTypeID, options);
-        },
-
-        /**
-         * Get all supplies
-         */
-        getAll: (options = {}) => {
-            this._requireInit();
-            return supplyManager.getAllSupplies(this.db, options);
-        },
-
-        /**
-         * Update supply
-         */
-        update: (supplyID, updates) => {
-            this._requireInit();
-            return supplyManager.updateSupply(this.db, supplyID, updates);
-        },
-
-        /**
-         * Set supply active status
-         */
-        setStatus: (supplyID, isActive) => {
-            this._requireInit();
-            return supplyManager.setSupplyStatus(this.db, supplyID, isActive);
-        }
-    };
-
-    // ============================================
     // CALCULATION UTILITIES
     // ============================================
 
     calculate = {
         /**
          * Calculate ABV from gravity readings
-         * @param {Object} params - Calculation parameters
-         * @param {number} params.originalReading - Original gravity reading
-         * @param {number} params.finalReading - Final gravity reading
-         * @param {string} params.densityScale - Density scale (default: "sg")
-         * @param {string} params.tempScale - Temperature scale (default: "c")
-         * @param {number} params.calibrationTemp - Hydrometer calibration temp (default: 20)
-         * @param {string} params.formula - Formula to use (default: "abv-basic")
-         * @param {number} [params.originalTemp] - Original reading temp (for correction)
-         * @param {number} [params.finalTemp] - Final reading temp (for correction)
-         * @returns {number} ABV percentage
          */
         abv: (params) => {
             return fermentation.abv(params);
@@ -744,14 +692,6 @@ query(sql, params = []) {
 
         /**
          * Calculate priming sugar needed for carbonation
-         * @param {Object} params - Calculation parameters
-         * @param {number} params.beverageVolume - Volume of beverage
-         * @param {string} params.volumeUnit - Volume unit (default: "l")
-         * @param {number} params.beverageTemp - Current beverage temp (default: 20)
-         * @param {string} params.tempScale - Temperature scale (default: "c")
-         * @param {number} params.desiredVolCo2 - Desired CO2 volumes (default: 2.0)
-         * @param {string} params.sugarType - Sugar type (default: "dextrose")
-         * @returns {Object} { massG, volumeMl, deltaSg, newVolumeL }
          */
         priming: (params) => {
             return fermentation.priming(params);
@@ -759,11 +699,6 @@ query(sql, params = []) {
 
         /**
          * Convert units
-         * @param {number} value - Value to convert
-         * @param {string} fromUnit - Source unit
-         * @param {string} toUnit - Target unit
-         * @param {string} category - Unit category (mass, volume, temperature, density, alcohol)
-         * @returns {number} Converted value
          */
         convert: (value, fromUnit, toUnit, category) => {
             return conversions.convert(value, fromUnit, toUnit, category);
@@ -771,12 +706,6 @@ query(sql, params = []) {
 
         /**
          * Apply temperature correction to density reading
-         * @param {number} value - Density reading
-         * @param {number} sampleTemp - Sample temperature
-         * @param {number} calibrationTemp - Hydrometer calibration temperature
-         * @param {string} temperatureUnit - Temperature unit
-         * @param {string} densityUnit - Density unit
-         * @returns {number} Corrected density
          */
         densityCorrection: (value, sampleTemp, calibrationTemp, temperatureUnit, densityUnit) => {
             return conversions.densityCorrection(value, sampleTemp, calibrationTemp, temperatureUnit, densityUnit);
@@ -829,7 +758,7 @@ query(sql, params = []) {
         }
     };
 
-        // ============================================
+    // ============================================
     // USER SETTINGS
     // ============================================
 

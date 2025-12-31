@@ -1,23 +1,35 @@
-// supplyTypeManager.js
+// supplyTypeManager.js - Supply type management
 
 import { resultToObjects, _updateActiveStatus } from './helpers.js';
 
 // ============================================
-// CRUD FUNCTIONS
+// SUPPLY TYPE FUNCTIONS
 // ============================================
 
 /**
  * Create a new supply type
  * 
+ * Supply types are generic templates (e.g., "Bottle (750ml)", "Sanitizer")
+ * that categorize consumable supplies used for (not in) fermentation.
+ * Items are specific instances of types (e.g., "Bordeaux 750ml", "Star San 32oz").
+ * 
  * @param {Object} db - SQL.js database instance
  * @param {Object} supplyTypeData - Supply type information
  * @param {number} supplyTypeData.categoryID - Category this belongs to (required)
- * @param {string} supplyTypeData.name - Supply type name (required, must be unique)
+ * @param {string} supplyTypeData.name - Type name (required, must be unique)
  * @param {string} [supplyTypeData.description] - Description (optional)
  * @returns {Object} Created supply type object with supplyTypeID
  * @throws {Error} If validation fails
+ * 
+ * @example
+ * const type = createSupplyType(db, {
+ *     categoryID: 21,
+ *     name: "Bottle (750ml Wine, Bordeaux)",
+ *     description: "Standard wine bottle, Bordeaux shape"
+ * });
  */
 function createSupplyType(db, supplyTypeData) {
+    // STEP 1: VALIDATE REQUIRED FIELDS
     if (!supplyTypeData.name || supplyTypeData.name.trim() === '') {
         throw new Error('Supply type name is required');
     }
@@ -26,6 +38,7 @@ function createSupplyType(db, supplyTypeData) {
         throw new Error('Valid categoryID is required');
     }
     
+    // STEP 2: VALIDATE CATEGORY EXISTS
     const categorySql = `SELECT categoryID FROM itemCategories WHERE categoryID = ?`;
     const categoryResult = db.exec(categorySql, [supplyTypeData.categoryID]);
     
@@ -33,6 +46,7 @@ function createSupplyType(db, supplyTypeData) {
         throw new Error(`Category ID ${supplyTypeData.categoryID} does not exist`);
     }
     
+    // STEP 3: PREPARE DATA
     const supplyType = {
         categoryID: supplyTypeData.categoryID,
         name: supplyTypeData.name.trim(),
@@ -40,6 +54,7 @@ function createSupplyType(db, supplyTypeData) {
     };
     
     try {
+        // STEP 4: INSERT SUPPLY TYPE
         const sql = `
             INSERT INTO supplyTypes (categoryID, name, description)
             VALUES (?, ?, ?)
@@ -51,10 +66,12 @@ function createSupplyType(db, supplyTypeData) {
             supplyType.description
         ]);
         
+        // STEP 5: GET THE NEW SUPPLY TYPE ID
         const [[supplyTypeID]] = db.exec("SELECT last_insert_rowid() as id")[0].values;
         
         console.log(`Supply type created successfully: ID ${supplyTypeID}`);
         
+        // STEP 6: RETURN COMPLETE OBJECT
         return {
             supplyTypeID: supplyTypeID,
             categoryID: supplyType.categoryID,
@@ -71,6 +88,11 @@ function createSupplyType(db, supplyTypeData) {
 
 /**
  * Get a single supply type by ID
+ * 
+ * @param {Object} db - SQL.js database instance
+ * @param {number} supplyTypeID - ID of the supply type to retrieve
+ * @returns {Object|null} Supply type object, or null if not found
+ * @throws {Error} If supplyTypeID is invalid
  */
 function getSupplyType(db, supplyTypeID) {
     if (typeof supplyTypeID !== 'number' || supplyTypeID <= 0) {
@@ -96,6 +118,13 @@ function getSupplyType(db, supplyTypeID) {
 
 /**
  * Get all supply types with optional filters
+ * 
+ * @param {Object} db - SQL.js database instance
+ * @param {Object} [options] - Filter options
+ * @param {number} [options.categoryID] - Filter by category
+ * @param {number} [options.isActive] - Filter by active status (0 or 1)
+ * @returns {Array} Array of supply type objects
+ * @throws {Error} If validation fails
  */
 function getAllSupplyTypes(db, options = {}) {
     try {
@@ -125,8 +154,6 @@ function getAllSupplyTypes(db, options = {}) {
         
         sql += ' ORDER BY name ASC';
         
-        console.log(`Fetching supply types with query: ${sql}`);
-        
         const result = db.exec(sql, params);
         const supplyTypes = resultToObjects(result);
         
@@ -141,6 +168,17 @@ function getAllSupplyTypes(db, options = {}) {
 
 /**
  * Update a supply type
+ * 
+ * Updates only the provided fields. Other fields remain unchanged.
+ * 
+ * @param {Object} db - SQL.js database instance
+ * @param {number} supplyTypeID - Supply type to update
+ * @param {Object} updates - Fields to update
+ * @param {string} [updates.name] - New name
+ * @param {string} [updates.description] - New description
+ * @param {number} [updates.categoryID] - New category
+ * @returns {Object} { success: boolean, message: string, updatedFields: array }
+ * @throws {Error} If validation fails
  */
 function updateSupplyType(db, supplyTypeID, updates) {
     if (typeof supplyTypeID !== 'number' || supplyTypeID <= 0) {
@@ -227,6 +265,12 @@ function updateSupplyType(db, supplyTypeID, updates) {
 
 /**
  * Set supply type active status
+ * 
+ * @param {Object} db - SQL.js database instance
+ * @param {number} supplyTypeID - Supply type to update
+ * @param {number} isActive - New status (1 = active, 0 = inactive)
+ * @returns {Object} { success: boolean, message: string }
+ * @throws {Error} If validation fails
  */
 function setSupplyTypeStatus(db, supplyTypeID, isActive) {
     if (typeof supplyTypeID !== 'number' || supplyTypeID <= 0) {
