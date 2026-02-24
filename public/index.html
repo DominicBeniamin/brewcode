@@ -6,8 +6,8 @@
     <title>Brewcode - Brewing Management</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-900 text-gray-100">
-    <div id="app"></div>
+<body class="bg-gray-900 text-gray-100 overflow-x-hidden">
+    <div id="app" class="overflow-x-hidden"></div>
 
     <!-- Load SQL.js library -->
     <script src="https://sql.js.org/dist/sql-wasm.js"></script>
@@ -17,12 +17,15 @@
         // IMPORTS
         // =====================================================================
         import BrewCode from '../modules/brewcode.js';
-        import { renderSettingsPage, attachSettingsHandlers } from '../modules/settingsUI.js';
+        import { renderSettingsPage, attachSettingsHandlers, showDatabaseSaveNotification } from '../modules/settingsUI.js';
         import { renderNavigation, toggleMobileMenu } from '../modules/navigation.js';
         import { renderDashboardPage } from '../modules/dashboardPage.js';
         
         // UI Helpers
         import { showToast, showLoadingScreen, showError } from '../modules/uiHelpers.js';
+
+        // Form Helpers
+        import { copyToClipboard } from '../modules/formHelpers.js';
 
         // Format Helpers
         import { getFormatters } from '../modules/formatHelpers.js';
@@ -47,6 +50,7 @@
             showCreateItemForm,
             updateCategoryOptionsForCreate,
             updateTypeOptionsForCreate,
+            updateSubtypeOptions,
             toggleOnDemandFields,
             submitCreateItem,
             showCreateTypeInline,
@@ -59,6 +63,20 @@
             toggleOnDemandFieldsEdit,
             submitEditItem
         } from '../modules/inventoryForms.js';
+
+        // Type Management
+        import {
+            showTypeManagement,
+            showTypeForm,
+            hideTypeForm,
+            saveType,
+            deleteType,
+            filterTypes,
+            showSubtypeForm,
+            hideSubtypeForm,
+            saveSubtype,
+            deleteSubtype
+        } from '../modules/typeManagerPage.js';
         
         // Equipment
         import {
@@ -70,6 +88,16 @@
         } from '../modules/equipmentPage.js';
         import { showAddEquipmentForm, showEditEquipmentForm } from '../modules/equipmentForms.js';
         
+        // Brew Tools
+        import {
+            renderBrewToolsPage,
+            updateConverterUnits,
+            performConversion,
+            performDensityCorrection,
+            calculateABV,
+            calculatePriming
+        } from '../modules/brewToolsPage.js?v=3';
+
         // Forms
         import { closeModal } from '../modules/formHelpers.js';
 
@@ -130,9 +158,9 @@
         // DATABASE FILE OPERATIONS
         // =====================================================================
         
-        async function saveDatabase() {
+        async function saveDatabase(silent = false) {
             if (!sessionState.isDatabaseLoaded) {
-                alert('No database loaded to save');
+                if (!silent) alert('No database loaded to save');
                 return;
             }
 
@@ -141,36 +169,48 @@
                 const data = db.export();
                 const blob = new Blob([data], { type: 'application/x-sqlite3' });
                 
-                // Check if File System Access API is available
-                if (window.showSaveFilePicker) {
-                    // Modern browsers with File System Access API
-                    if (sessionState.fileHandle) {
-                        // We have a file handle - write directly to it
-                        await writeToFileHandle(sessionState.fileHandle, blob);
-                        markDatabaseSaved(sessionState.currentFilename);
-                        showToast('✓ Database saved successfully', 'success');
-                    } else {
-                        // First save - show save dialog
-                        await saveAsNewFile(blob);
-                    }
-                } else {
-                    // Fallback for browsers without File System Access API (e.g., Safari)
-                    fallbackDownload(blob);
-                }
+                let fileHandle = sessionState.fileHandle;
                 
-                // Refresh settings page if we're on it
-                if (window.brewcode.currentPage === 'settings') {
-                    showSettings();
+                // If no file handle, show save dialog
+                if (!fileHandle) {
+                    fileHandle = await window.showSaveFilePicker({
+                        suggestedName: sessionState.currentFilename || 'brewcode.db',
+                        types: [{
+                            description: 'BrewCode Database',
+                            accept: { 'application/x-sqlite3': ['.db'] }
+                        }]
+                    });
+                    
+                    // Store the file handle for future saves
+                    sessionState.fileHandle = fileHandle;
+                    sessionState.currentFilename = fileHandle.name;
+                }
+
+                // Write to the file
+                const writable = await fileHandle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+                
+                markDatabaseSaved(sessionState.currentFilename);
+                
+                if (!silent) {
+                    showDatabaseSaveNotification();
+                    
+                    // Refresh settings page if we're on it
+                    if (window.brewcode.currentPage === 'settings') {
+                        showSettings();
+                    }
                 }
                 
             } catch (error) {
                 if (error.name === 'AbortError') {
-                    // User cancelled the save dialog
                     console.log('Save cancelled by user');
                     return;
                 }
                 console.error('Failed to save database:', error);
-                showToast('✗ Failed to save database', 'error');
+                if (!silent) {
+                    showToast('✗ Failed to save database: ' + error.message, 'error');
+                }
             }
         }
 
@@ -213,7 +253,7 @@
                 await writeToFileHandle(fileHandle, blob);
                 
                 markDatabaseSaved(fileHandle.name);
-                showToast('✓ Database saved successfully', 'success');
+                showDatabaseSaveNotification();
                 
             } catch (error) {
                 if (error.name === 'AbortError') {
@@ -236,7 +276,7 @@
             URL.revokeObjectURL(url);
             
             markDatabaseSaved(a.download);
-            showToast('✓ Database downloaded (Save dialog may not appear on subsequent saves in this browser)', 'success');
+            showDatabaseSaveNotification();
         }
 
         async function createNewDatabase() {
@@ -370,7 +410,7 @@
                 <div class="min-h-screen flex items-center justify-center p-4">
                     <div class="max-w-2xl w-full">
                         <div class="text-center mb-8">
-                            <h1 class="text-5xl font-bold text-amber-500 mb-4">🍺 Brewcode</h1>
+                            <h1 class="text-5xl font-bold text-amber-500 mb-4">{ Brewcode }</h1>
                             <p class="text-xl text-gray-400">Your Personal Brewing Assistant</p>
                         </div>
 
@@ -439,6 +479,7 @@
                 recipes: showRecipesPage,
                 inventory: showInventoryPage,
                 equipment: showEquipmentPage,
+                tools: showBrewToolsPage,      // ADD THIS LINE
                 settings: showSettings
             };
             
@@ -609,6 +650,22 @@
             showEditEquipmentForm(equipmentID);
         }
 
+        // --- Brew Tools ---
+        function showBrewToolsPage() {
+            const content = renderBrewToolsPage(BrewCode);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('tools') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+        }
+
+        // --- Type Management ---
+        function showTypeManagementWrapper(activeTab = 'ingredient') {
+            const content = showTypeManagement(BrewCode, activeTab);
+            document.getElementById('app').innerHTML = 
+                renderNavigation('settings') + 
+                `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${content}</div>`;
+        }
+
         // =====================================================================
         // GLOBAL API (window.brewcode)
         // =====================================================================
@@ -690,22 +747,23 @@ window.brewcode = {
     // Inventory filters
     applyInventoryFilters,
     
-    // Item creation form
+    // Item creation form (from inventoryForms)
     showCreateItemFormWrapper,
     updateCategoryOptionsForCreate,
     updateTypeOptionsForCreate,
+    updateSubtypeOptions,
     toggleOnDemandFields,
     submitCreateItem,
     showCreateTypeInline,
     hideCreateTypeInline,
     createTypeInline,
     
-    // Add lot form
+    // Add lot form (from inventoryForms)
     showAddLotForm,
     updateCostLabel,
     submitAddLot,
 
-    // Edit item form
+    // Edit item form (from inventoryForms)
     showEditItemForm,
     toggleOnDemandFieldsEdit,
     submitEditItem,
@@ -723,18 +781,59 @@ window.brewcode = {
     
     // Equipment filters
     filterEquipmentBySearch,
-    applyEquipmentFilters
+    applyEquipmentFilters,
+
+    // ============================================
+    // BREW TOOLS
+    // ============================================
+    // Page rendering
+    renderBrewToolsPage,
+    showBrewToolsPage,
+
+    // Calculator functions
+    updateConverterUnits,
+    performConversion,
+    performDensityCorrection,
+    calculateABV,
+    calculatePriming,
+    copyToClipboard,
+    
+    // ============================================
+    // TYPE MANAGEMENT (from typeManagerPage)
+    // ============================================
+    // Type management page
+    showTypeManagementWrapper,  // <-- ADD THIS LINE
+    showTypeManagement,
+    showTypeForm,
+    hideTypeForm,
+    saveType,
+    deleteType,
+    filterTypes,
+    
+    // Subtype management
+    showSubtypeForm,
+    hideSubtypeForm,
+    saveSubtype,
+    deleteSubtype
 };
 
         // =====================================================================
         // EVENT LISTENERS
         // =====================================================================
         
+        // Periodic auto-save every 30 seconds (only if file handle exists)
+        setInterval(() => {
+            if (sessionState.isDatabaseLoaded && sessionState.hasUnsavedChanges && sessionState.fileHandle) {
+                console.log('Auto-saving database...');
+                saveDatabase(true); // silent save
+            }
+        }, 30000); // 30 seconds
+
         // Warn before leaving with unsaved changes
         window.addEventListener('beforeunload', (e) => {
             if (sessionState.isDatabaseLoaded && sessionState.hasUnsavedChanges) {
                 e.preventDefault();
-                e.returnValue = '';
+                e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
                 return 'You have unsaved changes. Are you sure you want to leave?';
             }
         });
