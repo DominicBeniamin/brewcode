@@ -83,7 +83,7 @@ export const ConsumableCard: React.FC<ConsumableCardProps> = ({
     <button
       type="button"
       onClick={() => onSelect(c.consumableID)}
-      className={`w-full text-left bg-gray-800 rounded-lg border ${borderColor} p-5 hover:bg-gray-750 hover:border-amber-600 transition-colors cursor-pointer`}
+      className={`w-full h-full text-left bg-gray-800 rounded-lg border ${borderColor} p-5 hover:bg-gray-750 hover:border-amber-600 transition-colors cursor-pointer`}
     >
       {/* Header row */}
       <div className="flex justify-between items-start gap-4">

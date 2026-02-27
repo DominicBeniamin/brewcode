@@ -162,6 +162,7 @@ export const InventoryPage: React.FC = () => {
   if (currentView === 'add') {
     return (
       <div className="min-h-screen bg-gray-900 p-8">
+      <div className="max-w-[1280px] mx-auto">
         <button
           onClick={handleBackToList}
           className="text-amber-400 hover:text-amber-300 mb-4 inline-block"
@@ -171,6 +172,7 @@ export const InventoryPage: React.FC = () => {
         {/* ConsumableForm — Step 4 */}
         <ConsumableForm mode="add" onComplete={handleBackToList} />
       </div>
+    </div>
     );
   }
 
@@ -181,6 +183,7 @@ export const InventoryPage: React.FC = () => {
   if (currentView === 'edit' && editingConsumableID) {
     return (
       <div className="min-h-screen bg-gray-900 p-8">
+      <div className="max-w-[1280px] mx-auto">
         <button
           onClick={handleBackToList}
           className="text-amber-400 hover:text-amber-300 mb-4 inline-block"
@@ -190,6 +193,7 @@ export const InventoryPage: React.FC = () => {
         {/* ConsumableForm — Step 4 */}
         <ConsumableForm mode="edit" consumableID={editingConsumableID} onComplete={handleBackToList} />
       </div>
+    </div>
     );
   }
 
@@ -200,6 +204,7 @@ export const InventoryPage: React.FC = () => {
   if (currentView === 'detail' && detailConsumableID) {
     return (
       <div className="min-h-screen bg-gray-900 p-8">
+      <div className="max-w-[1280px] mx-auto">
         <button
           onClick={handleBackToList}
           className="text-amber-400 hover:text-amber-300 mb-4 inline-block"
@@ -213,12 +218,14 @@ export const InventoryPage: React.FC = () => {
           onBack={handleBackToList}
         />
       </div>
+    </div>
     );
   }
 
   if (currentView === 'addLot' && detailConsumableID) {
     return (
       <div className="min-h-screen bg-gray-900 p-8">
+      <div className="max-w-[1280px] mx-auto">
         <button
           onClick={() => { setCurrentView('detail'); }}
           className="text-amber-400 hover:text-amber-300 mb-4 inline-block"
@@ -230,6 +237,7 @@ export const InventoryPage: React.FC = () => {
           onComplete={() => { setCurrentView('detail'); }}
         />
       </div>
+    </div>
     );
   }
 
@@ -240,6 +248,7 @@ export const InventoryPage: React.FC = () => {
   if (allConsumables.length === 0) {
     return (
       <div className="min-h-screen bg-gray-900 p-8">
+        <div className="max-w-[1280px] mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-3xl font-bold text-white">Inventory</h2>
           <button
@@ -265,6 +274,7 @@ export const InventoryPage: React.FC = () => {
           description="Add your first consumable to start tracking ingredients and supplies."
           action={{ label: '+ Add Consumable', onClick: handleAddConsumable }}
         />
+        </div>
       </div>
     );
   }
@@ -275,6 +285,7 @@ export const InventoryPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-900 p-8">
+      <div className="max-w-[1280px] mx-auto">
 
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
@@ -359,7 +370,7 @@ export const InventoryPage: React.FC = () => {
           <p className="text-gray-400">No consumables match the current filters.</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
           {filteredAndSorted.map(consumable => (
             <ConsumableCard
               key={consumable.consumableID}
@@ -369,6 +380,7 @@ export const InventoryPage: React.FC = () => {
           ))}
         </div>
       )}
+    </div>
     </div>
   );
 };

@@ -70,7 +70,7 @@ export const EquipmentCard: React.FC<EquipmentCardProps> = ({
 
   return (
     <div
-      className={`bg-gray-800 rounded-lg border ${cardColor} p-6 hover:shadow-lg transition-shadow`}
+      className={`w-full max-w-[480px] mx-auto bg-gray-800 rounded-lg border ${cardColor} p-6 hover:shadow-lg transition-shadow`}
       data-equipment-id={equipment.equipmentID}
       data-equipment-category={category}
       data-equipment-name={equipment.name.toLowerCase()}
