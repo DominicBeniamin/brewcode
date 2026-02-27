@@ -10,6 +10,7 @@ import {
   deleteLot,
   updateLot,
   updateConsumable,
+  deleteConsumable,
 } from '../../lib/inventoryDb';
 import type { Consumable, InventoryLot } from '../../types/inventory';
 
@@ -67,7 +68,8 @@ export const ConsumableDetail: React.FC<ConsumableDetailProps> = ({
   const [lotsExpanded, setLotsExpanded] = useState(false);
 
   // Confirmation state for destructive actions
-  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  const [confirmDelete, setConfirmDelete]           = useState(false);
+  const [confirmDeactivate, setConfirmDeactivate]   = useState(false);
   const [confirmDeleteLotID, setConfirmDeleteLotID] = useState<number | null>(null);
   const [confirmDumpLotID, setConfirmDumpLotID]     = useState<number | null>(null);
 
@@ -117,6 +119,20 @@ export const ConsumableDetail: React.FC<ConsumableDetailProps> = ({
   // =========================================================================
   // ACTIONS
   // =========================================================================
+
+  const handleDelete = useCallback(() => {
+    if (!db || !consumable) return;
+    try {
+      deleteConsumable(db, consumable.consumableID);
+      markDirty();
+      toast.success(`"${consumable.name}" deleted`);
+      onBack();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete consumable');
+    } finally {
+      setConfirmDelete(false);
+    }
+  }, [db, consumable, markDirty, onBack, toast]);
 
   const handleDeactivate = useCallback(() => {
     if (!db || !consumable) return;
@@ -291,30 +307,69 @@ export const ConsumableDetail: React.FC<ConsumableDetailProps> = ({
             </button>
           )}
 
-          {confirmDeactivate ? (
-            <div className="flex items-center gap-2 ml-auto">
-              <span className="text-sm text-gray-400">Deactivate this item?</span>
-              <button
-                onClick={handleDeactivate}
-                className="bg-red-700 hover:bg-red-600 text-white font-medium py-2 px-3 rounded-lg text-sm transition-colors"
-              >
-                Confirm
-              </button>
-              <button
-                onClick={() => setConfirmDeactivate(false)}
-                className="bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-3 rounded-lg text-sm transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setConfirmDeactivate(true)}
-              className="ml-auto text-sm text-gray-500 hover:text-red-400 transition-colors"
-            >
-              Deactivate
-            </button>
-          )}
+          <div className="ml-auto flex items-center gap-3">
+            {confirmDelete ? (
+              <>
+                <span className="text-sm text-gray-400">
+                  {consumable.hasBeenUsed
+                    ? 'Used in batches — deactivate instead?'
+                    : 'Permanently delete this item?'}
+                </span>
+                {consumable.hasBeenUsed ? (
+                  <button
+                    onClick={handleDeactivate}
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-medium py-2 px-3 rounded-lg text-sm transition-colors"
+                  >
+                    Deactivate
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleDelete}
+                    className="bg-red-700 hover:bg-red-600 text-white font-medium py-2 px-3 rounded-lg text-sm transition-colors"
+                  >
+                    Confirm Delete
+                  </button>
+                )}
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-3 rounded-lg text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : confirmDeactivate ? (
+              <>
+                <span className="text-sm text-gray-400">Deactivate this item?</span>
+                <button
+                  onClick={handleDeactivate}
+                  className="bg-red-700 hover:bg-red-600 text-white font-medium py-2 px-3 rounded-lg text-sm transition-colors"
+                >
+                  Confirm
+                </button>
+                <button
+                  onClick={() => setConfirmDeactivate(false)}
+                  className="bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-3 rounded-lg text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setConfirmDeactivate(true)}
+                  className="text-sm text-gray-500 hover:text-red-400 transition-colors"
+                >
+                  Deactivate
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="text-sm text-gray-500 hover:text-red-400 transition-colors"
+                >
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

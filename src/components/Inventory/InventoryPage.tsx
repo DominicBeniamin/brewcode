@@ -8,6 +8,7 @@ import { FilterDropdown } from '../common/FilterComponents';
 import { ConsumableCard } from './ConsumableCard';
 import { ConsumableForm } from './ConsumableForm';
 import { ConsumableDetail } from './ConsumableDetail';
+import { LotForm } from './LotForm';
 import type {
   ConsumableWithStock,
   InventoryStats,
@@ -224,10 +225,10 @@ export const InventoryPage: React.FC = () => {
         >
           ← Back to Item
         </button>
-        {/* LotForm — next step */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-          <p className="text-gray-400">Lot form coming next.</p>
-        </div>
+        <LotForm
+          consumableID={detailConsumableID}
+          onComplete={() => { setCurrentView('detail'); }}
+        />
       </div>
     );
   }
@@ -363,9 +364,7 @@ export const InventoryPage: React.FC = () => {
             <ConsumableCard
               key={consumable.consumableID}
               consumable={consumable}
-              onEdit={handleEditConsumable}
-              onManageStock={handleViewDetail}
-              onDeleted={handleBackToList}
+              onSelect={handleViewDetail}
             />
           ))}
         </div>

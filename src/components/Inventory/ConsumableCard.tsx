@@ -1,10 +1,7 @@
 // src/components/Inventory/ConsumableCard.tsx
 
-import React, { useState } from 'react';
-import { useDatabase } from '../../contexts/DatabaseContext';
+import React from 'react';
 import { useFormatters } from '../../hooks/useFormatters';
-import { useToast } from '../../hooks/useToast';
-import { deleteConsumable, updateConsumable } from '../../lib/inventoryDb';
 import type { ConsumableWithStock } from '../../types/inventory';
 
 // ============================================================================
@@ -13,9 +10,7 @@ import type { ConsumableWithStock } from '../../types/inventory';
 
 interface ConsumableCardProps {
   consumable: ConsumableWithStock;
-  onEdit: (consumableID: number) => void;
-  onManageStock: (consumableID: number) => void;
-  onDeleted: () => void;
+  onSelect: (consumableID: number) => void;
 }
 
 // ============================================================================
@@ -70,137 +65,25 @@ function buildClassification(c: ConsumableWithStock): string {
 
 export const ConsumableCard: React.FC<ConsumableCardProps> = ({
   consumable: c,
-  onEdit,
-  onManageStock,
-  onDeleted,
+  onSelect,
 }) => {
-  const { db, markDirty } = useDatabase();
-  const formatters = useFormatters();
-  const toast = useToast();
-
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-
   const stockBadge = STOCK_STATUS_BADGE[c.stockStatus];
   const roleBadge = getRoleBadge(c);
   const classification = buildClassification(c);
   const displayName = c.brand ? `${c.brand} — ${c.name}` : c.name;
 
-  // -- Border colour by stock status ----------------------------------------
+  const fmt = useFormatters();
+
   const borderColor =
-    c.stockStatus === 'in-stock'     ? 'border-gray-700' :
     c.stockStatus === 'low-stock'    ? 'border-yellow-700' :
     c.stockStatus === 'out-of-stock' ? 'border-red-900' :
-    'border-gray-700'; // on-demand
-
-  // =========================================================================
-  // HANDLERS
-  // =========================================================================
-
-  const handleDeactivate = () => {
-    if (!db) return;
-    try {
-      updateConsumable(db, c.consumableID, { isActive: 0 });
-      markDirty();
-      toast.success(`"${c.name}" marked as inactive`);
-      onDeleted();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`Failed to deactivate: ${message}`);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!db) return;
-    setIsDeleting(true);
-    try {
-      deleteConsumable(db, c.consumableID);
-      markDirty();
-      toast.success(`"${c.name}" deleted`);
-      onDeleted();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      // If deletion is blocked because hasBeenUsed, offer deactivation instead
-      if (message.includes('has been used')) {
-        toast.error(message);
-      } else {
-        toast.error(`Failed to delete: ${message}`);
-      }
-    } finally {
-      setIsDeleting(false);
-      setShowDeleteConfirm(false);
-    }
-  };
-
-  // =========================================================================
-  // RENDER: DELETE CONFIRMATION
-  // =========================================================================
-
-  if (showDeleteConfirm) {
-    return (
-      <div className="bg-gray-800 rounded-lg border border-red-700 p-5">
-        <p className="text-white font-semibold mb-1">
-          Delete &ldquo;{displayName}&rdquo;?
-        </p>
-
-        {c.hasBeenUsed ? (
-          <>
-            <p className="text-sm text-gray-400 mb-4">
-              This consumable has been used in batches and cannot be deleted. You can mark it as
-              inactive instead — it will be hidden from the active inventory but preserved for
-              historical records.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={handleDeactivate}
-                className="bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold py-2 px-4 rounded transition-colors"
-              >
-                Mark as Inactive
-              </button>
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="bg-gray-700 hover:bg-gray-600 text-white text-sm py-2 px-4 rounded transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-gray-400 mb-4">
-              This will permanently delete the consumable and all of its stock lots. This action
-              cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={handleDelete}
-                disabled={isDeleting}
-                className="bg-red-700 hover:bg-red-600 disabled:bg-gray-600 text-white text-sm font-semibold py-2 px-4 rounded transition-colors"
-              >
-                {isDeleting ? 'Deleting…' : 'Delete Permanently'}
-              </button>
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                disabled={isDeleting}
-                className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm py-2 px-4 rounded transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    );
-  }
-
-  // =========================================================================
-  // RENDER: NORMAL
-  // =========================================================================
+    'border-gray-700';
 
   return (
-    <div
-      className={`bg-gray-800 rounded-lg border ${borderColor} p-5 hover:shadow-lg transition-shadow`}
-      data-consumable-id={c.consumableID}
+    <button
+      type="button"
+      onClick={() => onSelect(c.consumableID)}
+      className={`w-full text-left bg-gray-800 rounded-lg border ${borderColor} p-5 hover:bg-gray-750 hover:border-amber-600 transition-colors cursor-pointer`}
     >
       {/* Header row */}
       <div className="flex justify-between items-start gap-4">
@@ -219,30 +102,13 @@ export const ConsumableCard: React.FC<ConsumableCardProps> = ({
           <p className="text-sm text-gray-400 truncate">{classification}</p>
         </div>
 
-        {/* Right: action buttons */}
-        <div className="flex gap-2 shrink-0">
-          {!c.onDemand && (
-            <button
-              onClick={() => onManageStock(c.consumableID)}
-              className="bg-gray-700 hover:bg-gray-600 text-white text-sm py-2 px-4 rounded transition-colors whitespace-nowrap"
-            >
-              Manage Stock
-            </button>
-          )}
-          <button
-            onClick={() => onEdit(c.consumableID)}
-            className="bg-gray-700 hover:bg-gray-600 text-white text-sm py-2 px-4 rounded transition-colors"
-          >
-            Edit
-          </button>
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="bg-gray-700 hover:bg-red-800 text-gray-400 hover:text-red-300 text-sm py-2 px-3 rounded transition-colors"
-            aria-label="Delete consumable"
-          >
-            ✕
-          </button>
-        </div>
+        {/* Right: chevron affordance */}
+        <svg
+          className="w-5 h-5 text-gray-500 shrink-0 mt-1"
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
       </div>
 
       {/* Detail row */}
@@ -276,7 +142,7 @@ export const ConsumableCard: React.FC<ConsumableCardProps> = ({
               <span className="text-gray-400">
                 Oldest lot:{' '}
                 <span className="text-white font-medium">
-                  {formatters.date(c.oldestActiveLotDate)}
+                  {fmt.date(c.oldestActiveLotDate)}
                 </span>
               </span>
             )}
@@ -290,7 +156,7 @@ export const ConsumableCard: React.FC<ConsumableCardProps> = ({
               <span className="text-gray-400">
                 Price:{' '}
                 <span className="text-white font-medium">
-                  {formatters.currency(c.onDemandPrice)} / {c.onDemandPriceQty} {c.unit}
+                  {fmt.currency(c.onDemandPrice)} / {c.onDemandPriceQty} {c.unit}
                 </span>
               </span>
             )}
@@ -312,6 +178,6 @@ export const ConsumableCard: React.FC<ConsumableCardProps> = ({
           <span className="text-xs text-gray-400">{c.notes}</span>
         </div>
       )}
-    </div>
+    </button>
   );
 };
