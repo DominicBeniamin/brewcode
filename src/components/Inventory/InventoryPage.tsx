@@ -333,7 +333,6 @@ export const InventoryPage: React.FC = () => {
         />
 
         <FilterDropdown
-          label="Role"
           value={roleFilter}
           onChange={val => setRoleFilter(val as InventoryRoleFilter)}
           options={[
@@ -344,7 +343,6 @@ export const InventoryPage: React.FC = () => {
         />
 
         <FilterDropdown
-          label="Stock"
           value={stockFilter}
           onChange={val => setStockFilter(val as InventoryStockFilter)}
           options={[
