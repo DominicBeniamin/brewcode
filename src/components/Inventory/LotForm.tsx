@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useToast } from '../../hooks/useToast';
 import { getConsumable, addLot } from '../../lib/inventoryDb';
+import { useFormatters } from '../../hooks/useFormatters';
 import type { Consumable } from '../../types/inventory';
 
 // ============================================================================
@@ -105,6 +106,7 @@ function derivedCostPreview(
 export const LotForm: React.FC<LotFormProps> = ({ consumableID, onComplete }) => {
   const { db, markDirty } = useDatabase();
   const toast = useToast();
+  const fmt = useFormatters();
 
   const [consumable, setConsumable]   = useState<Consumable | null>(null);
   const [isLoading, setIsLoading]     = useState(true);
@@ -348,13 +350,11 @@ export const LotForm: React.FC<LotFormProps> = ({ consumableID, onComplete }) =>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
               <input
-                type="number"
+                type="text"
                 inputMode="decimal"
                 value={form.costValue}
                 onChange={e => set('costValue', e.target.value)}
-                placeholder="0.00"
-                min={0}
-                step="any"
+                placeholder={fmt.number(0, 2)}
                 className="w-32 bg-gray-700 text-white rounded-lg pl-7 pr-3 py-2 border border-gray-600 focus:border-amber-500 focus:outline-none"
               />
             </div>

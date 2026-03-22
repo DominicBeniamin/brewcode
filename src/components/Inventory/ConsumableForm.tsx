@@ -14,6 +14,7 @@ import {
   createSupplyType,
 } from '../../lib/inventoryDb';
 import { CompactNumberField, INPUT_WIDTHS } from '../common/FormComponents';
+import { useFormatters } from '../../hooks/useFormatters';
 import type {
   ConsumableFormData,
   IngredientType,
@@ -160,6 +161,7 @@ export const ConsumableForm: React.FC<ConsumableFormProps> = ({
 }) => {
   const { db, markDirty } = useDatabase();
   const toast = useToast();
+  const fmt = useFormatters();
 
   // -- Form state -----------------------------------------------------------
   const [formData, setFormData] = useState<ConsumableFormData>(EMPTY_FORM);
@@ -490,7 +492,7 @@ export const ConsumableForm: React.FC<ConsumableFormProps> = ({
   // =========================================================================
 
   const selectCls = (locked = false) =>
-    `w-full bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-amber-500 focus:outline-none ${
+    `w-auto bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-amber-500 focus:outline-none ${
       locked ? 'opacity-60 cursor-not-allowed' : ''
     }`;
 
@@ -507,7 +509,7 @@ export const ConsumableForm: React.FC<ConsumableFormProps> = ({
 
   if (isLoading) {
     return (
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-2xl">
+      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-2xl mx-auto">
         <p className="text-gray-400">Loading…</p>
       </div>
     );
@@ -522,7 +524,7 @@ export const ConsumableForm: React.FC<ConsumableFormProps> = ({
   const showSupplyFields     = itemRole === 'supply'     || itemRole === 'dual';
 
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-2xl">
+    <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-2xl mx-auto">
       <h3 className="text-2xl font-semibold text-white mb-6">
         {mode === 'add' ? 'Create Item' : 'Edit Item'}
       </h3>
@@ -871,16 +873,20 @@ export const ConsumableForm: React.FC<ConsumableFormProps> = ({
               Since you are not tracking stock, provide pricing info for cost calculations:
             </p>
             <div className="flex items-end gap-3">
-              <CompactNumberField
-                id="onDemandPrice"
-                label="Price"
-                value={formData.onDemandPrice}
-                onChange={e => set('onDemandPrice', e.target.value)}
-                placeholder="0.00"
-                step="0.01"
-                min={0}
-                fieldType={INPUT_WIDTHS.STANDARD}
-              />
+              <div>
+                <label htmlFor="onDemandPrice" className="block text-sm font-medium text-gray-400 mb-2">
+                  Price
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  id="onDemandPrice"
+                  value={formData.onDemandPrice}
+                  onChange={e => set('onDemandPrice', e.target.value)}
+                  placeholder={fmt.number(0, 2)}
+                  className="w-32 bg-gray-700 text-white rounded-lg px-3 py-2 border border-gray-600 focus:border-amber-500 focus:outline-none"
+                />
+              </div>
               <span className="text-gray-400 pb-2">per</span>
               <CompactNumberField
                 id="onDemandPriceQty"
@@ -894,7 +900,7 @@ export const ConsumableForm: React.FC<ConsumableFormProps> = ({
               />
             </div>
             <p className="text-xs text-gray-500">
-              Example: $5.99 for 500 g → Price = 5.99, Quantity = 500
+              Example: {fmt.currency(5.99)} for 500 g → Price = {fmt.number(5.99, 2)}, Quantity = 500
             </p>
           </div>
         )}
